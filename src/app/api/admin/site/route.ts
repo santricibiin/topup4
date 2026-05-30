@@ -5,6 +5,7 @@ import { apiHandler, ok } from "@/server/api-handler";
 import { requireAdminApi } from "@/server/admin";
 import { settingsService, SETTING_KEYS } from "@/services/settings.service";
 import { THEME_PRESETS } from "@/lib/theme-presets";
+import { BACKGROUND_KEYS } from "@/lib/background-presets";
 import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,7 @@ const SiteSchema = z.object({
     .optional()
     .default(""),
   theme: z.enum(VALID_THEMES).optional().default("emerald"),
+  background: z.enum(BACKGROUND_KEYS).optional().default("batik"),
 });
 
 /**
@@ -47,6 +49,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
     { key: SETTING_KEYS.SITE_TAGLINE, value: data.tagline ?? "" },
     { key: SETTING_KEYS.SITE_LOGO_URL, value: data.logoUrl ?? "" },
     { key: SETTING_KEYS.SITE_THEME, value: data.theme ?? "emerald" },
+    { key: SETTING_KEYS.SITE_BACKGROUND, value: data.background ?? "batik" },
   ]);
   // Force-clear cache + revalidate semua page biar nama/theme/logo langsung kepakai
   settingsService.invalidate();
@@ -56,6 +59,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
     by: admin.id,
     name: data.name,
     theme: data.theme,
+    background: data.background,
   });
 
   return ok({ updated: true, ...data });

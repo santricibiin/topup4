@@ -3,11 +3,12 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, Save, Image as ImageIcon, Zap, Type, RotateCcw, Palette, Upload, Trash2 } from "lucide-react";
+import { Loader2, Save, Image as ImageIcon, Zap, Type, RotateCcw, Palette, Upload, Trash2, Wallpaper } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { THEME_PRESETS, resolveTheme } from "@/lib/theme-presets";
+import { BACKGROUND_PRESETS } from "@/lib/background-presets";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -16,7 +17,74 @@ interface Props {
     tagline: string;
     logoUrl: string;
     theme: string;
+    background: string;
   };
+}
+
+/**
+ * Style preview mini untuk tiap pola background. Memakai hsl(var(--primary))
+ * sehingga preview otomatis ikut warna tema yang sedang aktif.
+ */
+const BATIK_MASK =
+  "url(\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='240'%20height='120'%20viewBox='0%200%20240%20120'%3E%3Cg%20fill='none'%20stroke='black'%20stroke-width='1.6'%20stroke-linecap='round'%3E%3Cpath%20d='M0%20120%20Q60%200%20120%20120%20Q180%200%20240%20120'/%3E%3Cpath%20d='M0%20120%20Q60%2024%20120%20120%20Q180%2024%20240%20120'/%3E%3Cpath%20d='M0%20120%20Q60%2048%20120%20120%20Q180%2048%20240%20120'/%3E%3Cpath%20d='M0%20120%20Q60%2072%20120%20120%20Q180%2072%20240%20120'/%3E%3Cpath%20d='M0%20120%20Q60%2096%20120%20120%20Q180%2096%20240%20120'/%3E%3C/g%3E%3C/svg%3E\")";
+
+const PARANG_MASK =
+  "url(\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='140'%20height='140'%20viewBox='0%200%20140%20140'%3E%3Cg%20fill='black'%3E%3Cpath%20d='M0%20140%20Q14%20112%2028%20112%20Q42%20112%2042%2098%20Q42%2084%2056%2084%20Q70%2084%2070%2070%20Q70%2056%2084%2056%20Q98%2056%2098%2042%20Q98%2028%20112%2028%20Q126%2028%20140%200%20L140%2014%20Q128%2030%20114%2030%20Q102%2030%20102%2042%20Q102%2058%2088%2058%20Q74%2058%2074%2070%20Q74%2086%2060%2086%20Q46%2086%2046%2098%20Q46%20114%2032%20114%20Q18%20114%206%20136%20Z'/%3E%3Cpath%20d='M70%2070%20l8%20-8%20l8%208%20l-8%208%20Z'%20transform='translate(-35%2035)'/%3E%3Cpath%20d='M70%2070%20l8%20-8%20l8%208%20l-8%208%20Z'%20transform='translate(35%20-35)'/%3E%3C/g%3E%3C/svg%3E\")";
+
+const SOCIAL_MASK =
+  "url(\"data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='120'%20height='120'%20viewBox='0%200%20120%20120'%3E%3Cg%20fill='black'%3E%3Cpath%20d='M30%2039%20C16%2030%2018%2021%2024%2021%20C27%2021%2029%2023%2030%2025%20C31%2023%2033%2021%2036%2021%20C42%2021%2044%2030%2030%2039%20Z'/%3E%3Cpath%20d='M84%2028%20L84%2042%20L96%2035%20Z'/%3E%3Cpath%20d='M24%2082%20h22%20a3%203%200%200%201%203%203%20v9%20a3%203%200%200%201%20-3%203%20h-12%20l-7%205%20v-5%20h-3%20a3%203%200%200%201%20-3%20-3%20v-9%20a3%203%200%200%201%203%20-3%20Z'/%3E%3Crect%20x='86'%20y='86'%20width='2.5'%20height='18'%20rx='1'/%3E%3Crect%20x='94'%20y='86'%20width='2.5'%20height='18'%20rx='1'/%3E%3Crect%20x='82'%20y='91'%20width='18'%20height='2.5'%20rx='1'/%3E%3Crect%20x='82'%20y='98'%20width='18'%20height='2.5'%20rx='1'/%3E%3C/g%3E%3C/svg%3E\")";
+
+function previewStyle(key: string): React.CSSProperties {
+  switch (key) {
+    case "parang":
+      return {
+        backgroundColor: "hsl(var(--primary) / 0.55)",
+        WebkitMaskImage: PARANG_MASK,
+        maskImage: PARANG_MASK,
+        WebkitMaskSize: "70px 70px",
+        maskSize: "70px 70px",
+        WebkitMaskRepeat: "repeat",
+        maskRepeat: "repeat",
+      };
+    case "social":
+      return {
+        backgroundColor: "hsl(var(--primary) / 0.55)",
+        WebkitMaskImage: SOCIAL_MASK,
+        maskImage: SOCIAL_MASK,
+        WebkitMaskSize: "60px 60px",
+        maskSize: "60px 60px",
+        WebkitMaskRepeat: "repeat",
+        maskRepeat: "repeat",
+      };
+    case "batik":
+      return {
+        backgroundColor: "hsl(var(--primary) / 0.55)",
+        WebkitMaskImage: BATIK_MASK,
+        maskImage: BATIK_MASK,
+        WebkitMaskSize: "80px 40px",
+        maskSize: "80px 40px",
+        WebkitMaskRepeat: "repeat",
+        maskRepeat: "repeat",
+      };
+    case "dots":
+      return {
+        backgroundImage:
+          "radial-gradient(circle, hsl(var(--primary) / 0.5) 1.5px, transparent 1.6px)",
+        backgroundSize: "12px 12px",
+      };
+    case "aurora":
+      return {
+        backgroundImage:
+          "radial-gradient(40% 50% at 20% 20%, hsl(var(--primary) / 0.55) 0%, transparent 60%), radial-gradient(45% 50% at 80% 30%, hsl(var(--primary) / 0.4) 0%, transparent 55%), radial-gradient(55% 45% at 60% 90%, hsl(var(--primary) / 0.45) 0%, transparent 60%)",
+      };
+    case "diagonal":
+      return {
+        backgroundImage:
+          "repeating-linear-gradient(45deg, hsl(var(--primary) / 0.4) 0, hsl(var(--primary) / 0.4) 1px, transparent 1px, transparent 8px)",
+      };
+    default:
+      return {};
+  }
 }
 
 export function SiteSettingsForm({ initial }: Props) {
@@ -26,6 +94,7 @@ export function SiteSettingsForm({ initial }: Props) {
   const [tagline, setTagline] = useState(initial.tagline);
   const [logoUrl, setLogoUrl] = useState(initial.logoUrl);
   const [theme, setTheme] = useState(initial.theme);
+  const [background, setBackground] = useState(initial.background);
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
 
@@ -33,12 +102,14 @@ export function SiteSettingsForm({ initial }: Props) {
   const dirty =
     name !== initial.name ||
     tagline !== initial.tagline ||
-    theme !== initial.theme;
+    theme !== initial.theme ||
+    background !== initial.background;
 
   function handleReset() {
     setName(initial.name);
     setTagline(initial.tagline);
     setTheme(initial.theme);
+    setBackground(initial.background);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -49,7 +120,7 @@ export function SiteSettingsForm({ initial }: Props) {
       const res = await fetch("/api/admin/site", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, tagline, logoUrl, theme }),
+        body: JSON.stringify({ name, tagline, logoUrl, theme, background }),
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error?.message ?? "Gagal simpan");
@@ -288,6 +359,54 @@ export function SiteSettingsForm({ initial }: Props) {
             <span className="font-medium text-foreground">
               {resolveTheme(theme).label}
             </span>
+          </p>
+        </div>
+
+        {/* Background picker */}
+        <div className="space-y-2">
+          <Label className="flex items-center gap-1.5">
+            <Wallpaper className="h-3.5 w-3.5 text-muted-foreground" />
+            Background Halaman
+          </Label>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+            {BACKGROUND_PRESETS.map((b) => {
+              const active = background === b.key;
+              return (
+                <button
+                  key={b.key}
+                  type="button"
+                  onClick={() => setBackground(b.key)}
+                  className={cn(
+                    "group relative flex flex-col gap-2 rounded-lg border p-2 text-left transition-all",
+                    active
+                      ? "border-primary bg-primary/5 shadow-sm"
+                      : "border-border bg-card hover:border-primary/40 hover:bg-muted/50",
+                  )}
+                  title={b.description}
+                >
+                  <span className="relative block h-16 w-full overflow-hidden rounded-md bg-muted/40 ring-1 ring-border">
+                    {b.key === "none" ? (
+                      <span className="absolute inset-0 grid place-items-center text-[10px] text-muted-foreground">
+                        Polos
+                      </span>
+                    ) : (
+                      <span
+                        className="absolute inset-0"
+                        style={previewStyle(b.key)}
+                        aria-hidden
+                      />
+                    )}
+                  </span>
+                  <span className="line-clamp-1 text-[11px] font-medium">
+                    {b.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Pola dekoratif di belakang semua halaman. Warnanya otomatis
+            mengikuti warna tema di atas.
           </p>
         </div>
       </div>

@@ -71,13 +71,12 @@
   }
 
   /**
-   * Pattern batik Parang Rusak — motif diagonal khas keraton Jawa.
-   * Filosofi: garis kontinyu yg gak pernah putus = simbol perjuangan,
-   * kekuatan, dan kesinambungan. Salah satu motif paling sakral, dulu
-   * cuma boleh dipakai keluarga raja.
+   * Background pattern global — dipilih admin lewat atribut `data-bg`
+   * di <body> (lihat src/lib/background-presets.ts).
    *
-   * Visual: deretan diagonal "S" yang mengalir, dengan parang kecil
-   * (mlinjon/belah ketupat) di antaranya.
+   * Semua pola memakai `hsl(var(--primary))` sehingga otomatis ikut warna
+   * tema yang dipilih admin. Lapisan ::after memberi soft-fade di tepi atas
+   * & bawah viewport agar pola tidak terlalu padat.
    */
   body::before {
     content: "";
@@ -85,14 +84,104 @@
     inset: 0;
     z-index: -1;
     pointer-events: none;
+  }
+
+  /**
+   * Batik Parang Rusak — motif diagonal khas keraton Jawa.
+   * Filosofi: garis kontinyu yg gak pernah putus = simbol perjuangan,
+   * kekuatan, dan kesinambungan. Visual: deretan diagonal "S" mengalir
+   * dengan mlinjon (belah ketupat kecil) di antaranya.
+   */
+  body[data-bg="parang"]::before {
     background-color: hsl(var(--primary));
     opacity: 0.09;
-    -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='140'%20height='140'%20viewBox='0%200%20140%20140'%3E%3Cg%20fill='black'%3E%3C!--%20Parang%20utama%20--%3E%3Cpath%20d='M0%20140%20Q14%20112%2028%20112%20Q42%20112%2042%2098%20Q42%2084%2056%2084%20Q70%2084%2070%2070%20Q70%2056%2084%2056%20Q98%2056%2098%2042%20Q98%2028%20112%2028%20Q126%2028%20140%200%20L140%2014%20Q128%2030%20114%2030%20Q102%2030%20102%2042%20Q102%2058%2088%2058%20Q74%2058%2074%2070%20Q74%2086%2060%2086%20Q46%2086%2046%2098%20Q46%20114%2032%20114%20Q18%20114%206%20136%20Z'/%3E%3C!--%20Mlinjon%20(belah%20ketupat%20kecil)%20--%3E%3Cpath%20d='M70%2070%20l8%20-8%20l8%208%20l-8%208%20Z'%20transform='translate(-35%2035)'/%3E%3Cpath%20d='M70%2070%20l8%20-8%20l8%208%20l-8%208%20Z'%20transform='translate(35%20-35)'/%3E%3C/g%3E%3C/svg%3E");
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='140'%20height='140'%20viewBox='0%200%20140%20140'%3E%3Cg%20fill='black'%3E%3Cpath%20d='M0%20140%20Q14%20112%2028%20112%20Q42%20112%2042%2098%20Q42%2084%2056%2084%20Q70%2084%2070%2070%20Q70%2056%2084%2056%20Q98%2056%2098%2042%20Q98%2028%20112%2028%20Q126%2028%20140%200%20L140%2014%20Q128%2030%20114%2030%20Q102%2030%20102%2042%20Q102%2058%2088%2058%20Q74%2058%2074%2070%20Q74%2086%2060%2086%20Q46%2086%2046%2098%20Q46%20114%2032%20114%20Q18%20114%206%20136%20Z'/%3E%3Cpath%20d='M70%2070%20l8%20-8%20l8%208%20l-8%208%20Z'%20transform='translate(-35%2035)'/%3E%3Cpath%20d='M70%2070%20l8%20-8%20l8%208%20l-8%208%20Z'%20transform='translate(35%20-35)'/%3E%3C/g%3E%3C/svg%3E");
     mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='140'%20height='140'%20viewBox='0%200%20140%20140'%3E%3Cg%20fill='black'%3E%3Cpath%20d='M0%20140%20Q14%20112%2028%20112%20Q42%20112%2042%2098%20Q42%2084%2056%2084%20Q70%2084%2070%2070%20Q70%2056%2084%2056%20Q98%2056%2098%2042%20Q98%2028%20112%2028%20Q126%2028%20140%200%20L140%2014%20Q128%2030%20114%2030%20Q102%2030%20102%2042%20Q102%2058%2088%2058%20Q74%2058%2074%2070%20Q74%2086%2060%2086%20Q46%2086%2046%2098%20Q46%20114%2032%20114%20Q18%20114%206%20136%20Z'/%3E%3Cpath%20d='M70%2070%20l8%20-8%20l8%208%20l-8%208%20Z'%20transform='translate(-35%2035)'/%3E%3Cpath%20d='M70%2070%20l8%20-8%20l8%208%20l-8%208%20Z'%20transform='translate(35%20-35)'/%3E%3C/g%3E%3C/svg%3E");
     -webkit-mask-repeat: repeat;
     mask-repeat: repeat;
     -webkit-mask-size: 140px 140px;
     mask-size: 140px 140px;
+  }
+  .dark body[data-bg="parang"]::before {
+    opacity: 0.08;
+  }
+
+  /**
+   * Batik Megamendung — motif awan berlapis khas Cirebon.
+   * Pakai mask + background-color biar warnanya ikut tema.
+   */
+  body[data-bg="batik"]::before {
+    background-color: hsl(var(--primary));
+    opacity: 0.1;
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='240'%20height='120'%20viewBox='0%200%20240%20120'%3E%3Cg%20fill='none'%20stroke='black'%20stroke-width='1.6'%20stroke-linecap='round'%3E%3Cpath%20d='M0%20120%20Q60%200%20120%20120%20Q180%200%20240%20120'/%3E%3Cpath%20d='M0%20120%20Q60%2024%20120%20120%20Q180%2024%20240%20120'/%3E%3Cpath%20d='M0%20120%20Q60%2048%20120%20120%20Q180%2048%20240%20120'/%3E%3Cpath%20d='M0%20120%20Q60%2072%20120%20120%20Q180%2072%20240%20120'/%3E%3Cpath%20d='M0%20120%20Q60%2096%20120%20120%20Q180%2096%20240%20120'/%3E%3C/g%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='240'%20height='120'%20viewBox='0%200%20240%20120'%3E%3Cg%20fill='none'%20stroke='black'%20stroke-width='1.6'%20stroke-linecap='round'%3E%3Cpath%20d='M0%20120%20Q60%200%20120%20120%20Q180%200%20240%20120'/%3E%3Cpath%20d='M0%20120%20Q60%2024%20120%20120%20Q180%2024%20240%20120'/%3E%3Cpath%20d='M0%20120%20Q60%2048%20120%20120%20Q180%2048%20240%20120'/%3E%3Cpath%20d='M0%20120%20Q60%2072%20120%20120%20Q180%2072%20240%20120'/%3E%3Cpath%20d='M0%20120%20Q60%2096%20120%20120%20Q180%2096%20240%20120'/%3E%3C/g%3E%3C/svg%3E");
+    -webkit-mask-repeat: repeat;
+    mask-repeat: repeat;
+    -webkit-mask-size: 240px 120px;
+    mask-size: 240px 120px;
+  }
+  .dark body[data-bg="batik"]::before {
+    opacity: 0.09;
+  }
+
+  /* Dots — titik-titik polka rapi. */
+  body[data-bg="dots"]::before {
+    background-image: radial-gradient(
+      circle,
+      hsl(var(--primary) / 0.22) 1.5px,
+      transparent 1.6px
+    );
+    background-size: 22px 22px;
+  }
+
+  /* Aurora — gradien lembut mengambang, modern & estetik. */
+  body[data-bg="aurora"]::before {
+    background-image:
+      radial-gradient(
+        40% 50% at 18% 18%,
+        hsl(var(--primary) / 0.2) 0%,
+        transparent 60%
+      ),
+      radial-gradient(
+        45% 50% at 82% 28%,
+        hsl(var(--primary) / 0.14) 0%,
+        transparent 55%
+      ),
+      radial-gradient(
+        55% 45% at 60% 88%,
+        hsl(var(--primary) / 0.16) 0%,
+        transparent 60%
+      );
+  }
+
+  /* Diagonal — garis miring tipis berulang. */
+  body[data-bg="diagonal"]::before {
+    background-image: repeating-linear-gradient(
+      45deg,
+      hsl(var(--primary) / 0.13) 0,
+      hsl(var(--primary) / 0.13) 1px,
+      transparent 1px,
+      transparent 12px
+    );
+  }
+
+  /**
+   * Media Sosial — tabur ikon generik (hati, play, chat bubble, tagar).
+   * Ikon generik, bukan logo brand, supaya aman dari soal trademark.
+   * Pakai mask + background-color biar warnanya ikut tema.
+   */
+  body[data-bg="social"]::before {
+    background-color: hsl(var(--primary));
+    opacity: 0.1;
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='120'%20height='120'%20viewBox='0%200%20120%20120'%3E%3Cg%20fill='black'%3E%3Cpath%20d='M30%2039%20C16%2030%2018%2021%2024%2021%20C27%2021%2029%2023%2030%2025%20C31%2023%2033%2021%2036%2021%20C42%2021%2044%2030%2030%2039%20Z'/%3E%3Cpath%20d='M84%2028%20L84%2042%20L96%2035%20Z'/%3E%3Cpath%20d='M24%2082%20h22%20a3%203%200%200%201%203%203%20v9%20a3%203%200%200%201%20-3%203%20h-12%20l-7%205%20v-5%20h-3%20a3%203%200%200%201%20-3%20-3%20v-9%20a3%203%200%200%201%203%20-3%20Z'/%3E%3Crect%20x='86'%20y='86'%20width='2.5'%20height='18'%20rx='1'/%3E%3Crect%20x='94'%20y='86'%20width='2.5'%20height='18'%20rx='1'/%3E%3Crect%20x='82'%20y='91'%20width='18'%20height='2.5'%20rx='1'/%3E%3Crect%20x='82'%20y='98'%20width='18'%20height='2.5'%20rx='1'/%3E%3C/g%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='120'%20height='120'%20viewBox='0%200%20120%20120'%3E%3Cg%20fill='black'%3E%3Cpath%20d='M30%2039%20C16%2030%2018%2021%2024%2021%20C27%2021%2029%2023%2030%2025%20C31%2023%2033%2021%2036%2021%20C42%2021%2044%2030%2030%2039%20Z'/%3E%3Cpath%20d='M84%2028%20L84%2042%20L96%2035%20Z'/%3E%3Cpath%20d='M24%2082%20h22%20a3%203%200%200%201%203%203%20v9%20a3%203%200%200%201%20-3%203%20h-12%20l-7%205%20v-5%20h-3%20a3%203%200%200%201%20-3%20-3%20v-9%20a3%203%200%200%201%203%20-3%20Z'/%3E%3Crect%20x='86'%20y='86'%20width='2.5'%20height='18'%20rx='1'/%3E%3Crect%20x='94'%20y='86'%20width='2.5'%20height='18'%20rx='1'/%3E%3Crect%20x='82'%20y='91'%20width='18'%20height='2.5'%20rx='1'/%3E%3Crect%20x='82'%20y='98'%20width='18'%20height='2.5'%20rx='1'/%3E%3C/g%3E%3C/svg%3E");
+    -webkit-mask-repeat: repeat;
+    mask-repeat: repeat;
+    -webkit-mask-size: 120px 120px;
+    mask-size: 120px 120px;
+  }
+  .dark body[data-bg="social"]::before {
+    opacity: 0.09;
   }
 
   body::after {
@@ -109,10 +198,6 @@
       transparent 86%,
       hsl(var(--background)) 100%
     );
-  }
-
-  .dark body::before {
-    opacity: 0.08;
   }
 
   /* Hide scrollbar globally — page tetap scrollable, cuma visualnya bersih */

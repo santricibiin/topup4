@@ -159,12 +159,16 @@ export function TopupSearch({
               {groupedCategories.map((g) => (
                 <div
                   key={g.key}
-                  className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
+                  className="overflow-hidden rounded-xl border border-border bg-card"
                 >
-                  <div className="border-b border-border/60 px-4 py-3 md:px-5">
-                    <h2 className="text-base font-semibold tracking-tight md:text-lg">
+                  <div className="flex items-baseline justify-between gap-3 border-b border-border/60 px-4 py-3.5 md:px-5">
+                    <h2 className="flex items-center gap-2.5 text-sm font-semibold tracking-tight text-foreground md:text-base">
+                      <span className="h-4 w-px bg-foreground/30" aria-hidden />
                       {g.label}
                     </h2>
+                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                      {g.items.length} kategori
+                    </span>
                   </div>
                   <div className={`grid gap-y-5 gap-x-3 p-4 md:p-5 ${catGridCls}`}>
                     {g.items.map((c) => (
