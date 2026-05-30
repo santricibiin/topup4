@@ -17,8 +17,8 @@
  *   - parseDbUrl() → extract host/user/pass/db dari DATABASE_URL
  *
  * Lokasi file:
- *   <APP_ROOT>/backups/ptopup-YYYYMMDD-HHmmss.sql.gz       (DB)
- *   <APP_ROOT>/backups/ptopup-uploads-YYYYMMDD-HHmmss.tar.gz (uploads)
+ *   <APP_ROOT>/backups/ptopup-YYYYMMDD-HHmmss.sql.gz         (DB dump)
+ *   <APP_ROOT>/backups/ptopup-uploads-YYYYMMDD-HHmmss.tar.gz (data/ bundle: uploads + wa-session)
  * Folder dibikin auto kalau belum ada.
  */
 import { execFile } from "node:child_process";
@@ -60,6 +60,8 @@ class BackupService {
   private readonly appRoot: string;
   /** Folder media yang dibundle saat backup uploads. Relatif ke appRoot. */
   private readonly uploadsRel = path.join("data", "uploads");
+  /** Folder sesi WhatsApp (Baileys creds + keys). Relatif ke appRoot. */
+  private readonly waSessionRel = path.join("data", "wa-session");
 
   constructor() {
     this.appRoot = process.cwd();
@@ -69,6 +71,32 @@ class BackupService {
   /** Path absolut folder uploads. */
   private uploadsAbs(): string {
     return path.join(this.appRoot, this.uploadsRel);
+  }
+
+  /** Path absolut folder wa-session. */
+  private waSessionAbs(): string {
+    return path.join(this.appRoot, this.waSessionRel);
+  }
+
+  /**
+   * List folder relatif yang harus masuk ke bundle.
+   * Skip folder yang belum ada (mis. wa-session belum pernah dipakai).
+   */
+  private async resolveBundleTargets(): Promise<string[]> {
+    const candidates: Array<{ rel: string; abs: string }> = [
+      { rel: this.uploadsRel, abs: this.uploadsAbs() },
+      { rel: this.waSessionRel, abs: this.waSessionAbs() },
+    ];
+    const targets: string[] = [];
+    for (const c of candidates) {
+      try {
+        const st = await fs.stat(c.abs);
+        if (st.isDirectory()) targets.push(c.rel);
+      } catch {
+        // folder belum ada — skip
+      }
+    }
+    return targets;
   }
 
   /**
@@ -287,19 +315,27 @@ class BackupService {
   }
 
   /**
-   * Bundle folder `data/uploads/` jadi `.tar.gz`.
+   * Bundle folder `data/uploads/` dan `data/wa-session/` jadi `.tar.gz`.
    * Pakai `tar` system command (Linux/macOS/WSL/Git Bash) untuk efisiensi
    * dan kompatibilitas dengan script `db-restore.sh`.
    *
    * Format file: ptopup-uploads-YYYYMMDD-HHmmss.tar.gz
-   * Bundle root: relatif ke <appRoot>, isi diawali `data/uploads/`.
+   * Bundle root: relatif ke <appRoot>, isi diawali `data/uploads/` dan/atau
+   * `data/wa-session/` (folder yang belum ada di-skip otomatis).
    */
   async dumpUploads(): Promise<BackupFile> {
     await this.ensureDir();
     const uploadsDir = this.uploadsAbs();
 
-    // Pastikan folder ada (kalau belum, bikin kosong supaya tar gak error).
+    // Pastikan folder uploads ada (bikin kosong supaya tar gak error kalau
+    // wa-session juga belum ada).
     await fs.mkdir(uploadsDir, { recursive: true });
+
+    const targets = await this.resolveBundleTargets();
+    if (targets.length === 0) {
+      // Fallback: tetap bundle uploads (folder kosong) supaya restore aman.
+      targets.push(this.uploadsRel);
+    }
 
     const ts = new Date()
       .toISOString()
@@ -309,11 +345,10 @@ class BackupService {
     const filepath = path.join(this.backupDir, filename);
 
     const { spawn } = await import("node:child_process");
-    // tar -czf <out> -C <appRoot> data/uploads
-    // -C cwd biar path di dalam tar relatif (cocok dengan db-restore.sh).
+    // tar -czf <out> -C <appRoot> data/uploads [data/wa-session]
     const tarProc = spawn(
       "tar",
-      ["-czf", filepath, "-C", this.appRoot, this.uploadsRel],
+      ["-czf", filepath, "-C", this.appRoot, ...targets],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
 
@@ -335,7 +370,11 @@ class BackupService {
       throw new Error("Bundle uploads terlalu kecil (< 50 byte), kemungkinan gagal");
     }
 
-    logger.info("backup.uploads.created", { filename, size: stat.size });
+    logger.info("backup.uploads.created", {
+      filename,
+      size: stat.size,
+      targets,
+    });
 
     return {
       name: filename,
@@ -395,9 +434,11 @@ class BackupService {
       const preName = `pre-restore-uploads-${ts}.tar.gz`;
       const prePath = path.join(this.backupDir, preName);
       await this.ensureDir();
+      const preTargets = await this.resolveBundleTargets();
+      if (preTargets.length === 0) preTargets.push(this.uploadsRel);
       const preProc = spawn(
         "tar",
-        ["-czf", prePath, "-C", this.appRoot, this.uploadsRel],
+        ["-czf", prePath, "-C", this.appRoot, ...preTargets],
         { stdio: ["ignore", "ignore", "pipe"] },
       );
       const preErrs: Buffer[] = [];
@@ -420,7 +461,8 @@ class BackupService {
       // folder uploads belum ada → skip pre-backup
     }
 
-    // 2. Hapus isi folder uploads (bukan folder itu sendiri).
+    // 2. Hapus isi folder uploads (bukan folder itu sendiri) DAN wa-session
+    //    kalau ada, supaya tidak campur file lama + baru.
     await fs.mkdir(uploadsDir, { recursive: true });
     const entries = await fs.readdir(uploadsDir).catch(() => []);
     for (const entry of entries) {
@@ -429,8 +471,23 @@ class BackupService {
         .catch(() => {});
     }
 
-    // 3. Extract bundle. Asumsi bundle berisi prefix `data/uploads/...`.
-    //    Kalau prefix beda, kita pakai --strip dengan deteksi dulu.
+    // wa-session hanya dibersihkan kalau folder-nya sudah ada (artinya pernah
+    // dipakai). Kalau bundle gak punya wa-session, folder ini tetap kosong.
+    const waSessionDir = this.waSessionAbs();
+    try {
+      await fs.access(waSessionDir);
+      const waEntries = await fs.readdir(waSessionDir).catch(() => []);
+      for (const entry of waEntries) {
+        await fs
+          .rm(path.join(waSessionDir, entry), { recursive: true, force: true })
+          .catch(() => {});
+      }
+    } catch {
+      // belum ada — skip
+    }
+
+    // 3. Extract bundle. Asumsi bundle berisi prefix `data/uploads/...` dan
+    //    optional `data/wa-session/...`.
     const extractProc = spawn(
       "tar",
       ["-xzf", realPath, "-C", this.appRoot],

@@ -51,6 +51,21 @@ const nextConfig = {
       "@radix-ui/react-dialog",
       "@radix-ui/react-dropdown-menu",
     ],
+    // Baileys (& deps native-nya seperti `lru-cache`, `node-cache`, dll)
+    // tidak ramah webpack-bundle. Marked external supaya di-load lewat
+    // Node `require()` runtime — bukan dibundle.
+    serverComponentsExternalPackages: [
+      "@whiskeysockets/baileys",
+      "@hapi/boom",
+      "pino",
+      "qrcode",
+      "lru-cache",
+      "node-cache",
+      "libsignal",
+      "jimp",
+      "link-preview-js",
+      "audio-decode",
+    ],
   },
   // Compress server response (dev/prod). Sudah default true di Next 14, tapi explicit.
   compress: true,

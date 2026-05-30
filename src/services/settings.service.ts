@@ -39,6 +39,26 @@ export const SETTING_KEYS = {
   BACKUP_INTERVAL: "backup.interval",          // "minutes" | "hours" | "days"
   BACKUP_VALUE: "backup.value",                // angka — frekuensi
   BACKUP_KEEP_DAYS: "backup.keepDays",         // berapa hari sebelum auto-delete
+  // WhatsApp
+  WA_ENABLED: "wa.enabled",                    // "true" | "false" — master switch
+  WA_LINK_METHOD: "wa.linkMethod",             // "qr" | "pairing"
+  WA_PAIRING_PHONE: "wa.pairingPhone",         // nomor admin utk pairing (62...)
+  WA_FEATURE_OTP_REGISTER: "wa.feature.otpRegister",  // "true" | "false"
+  WA_FEATURE_OTP_RESET: "wa.feature.otpReset",        // "true" | "false"
+  WA_FEATURE_OTP_LOGIN: "wa.feature.otpLogin",        // "true" | "false"
+  WA_FEATURE_NOTIF_TX: "wa.feature.notifTx",          // "true" | "false"
+  WA_OTP_TTL_SEC: "wa.otp.ttlSec",             // angka detik (default 300)
+  WA_OTP_RESEND_COOLDOWN_SEC: "wa.otp.resendCooldownSec", // default 60
+  WA_OTP_MAX_ATTEMPT: "wa.otp.maxAttempt",     // default 5
+  WA_TPL_OTP_REGISTER: "wa.tpl.otpRegister",   // template pesan OTP daftar
+  WA_TPL_OTP_RESET: "wa.tpl.otpReset",         // template pesan OTP reset
+  WA_TPL_OTP_LOGIN: "wa.tpl.otpLogin",         // template pesan OTP login
+  WA_TPL_TX_PAID: "wa.tpl.txPaid",             // template pesan saat tx PAID
+  WA_TPL_TX_SUCCESS: "wa.tpl.txSuccess",       // template pesan saat tx SUCCESS
+  WA_TPL_TX_FAILED: "wa.tpl.txFailed",         // template pesan saat tx FAILED
+  // System-set (read-only via UI; di-update otomatis service)
+  WA_LINKED_JID: "wa.linkedJid",               // JID akun aktif
+  WA_LINKED_AT: "wa.linkedAt",                 // ISO timestamp connect
 } as const;
 
 export type SettingKey = (typeof SETTING_KEYS)[keyof typeof SETTING_KEYS];
@@ -101,6 +121,42 @@ function envDefault(key: SettingKey): string {
       return "1";
     case SETTING_KEYS.BACKUP_KEEP_DAYS:
       return "7";
+    case SETTING_KEYS.WA_ENABLED:
+      return "false";
+    case SETTING_KEYS.WA_LINK_METHOD:
+      return "qr";
+    case SETTING_KEYS.WA_PAIRING_PHONE:
+      return "";
+    case SETTING_KEYS.WA_FEATURE_OTP_REGISTER:
+      return "false";
+    case SETTING_KEYS.WA_FEATURE_OTP_RESET:
+      return "false";
+    case SETTING_KEYS.WA_FEATURE_OTP_LOGIN:
+      return "false";
+    case SETTING_KEYS.WA_FEATURE_NOTIF_TX:
+      return "false";
+    case SETTING_KEYS.WA_OTP_TTL_SEC:
+      return "300";
+    case SETTING_KEYS.WA_OTP_RESEND_COOLDOWN_SEC:
+      return "60";
+    case SETTING_KEYS.WA_OTP_MAX_ATTEMPT:
+      return "5";
+    case SETTING_KEYS.WA_TPL_OTP_REGISTER:
+      return "{{site}} - Kode OTP Anda: *{{kode}}*\n\nGunakan kode ini untuk verifikasi pendaftaran. Berlaku {{ttl_menit}} menit.\n\nJangan bagikan kode ini ke siapa pun.";
+    case SETTING_KEYS.WA_TPL_OTP_RESET:
+      return "{{site}} - Kode reset password Anda: *{{kode}}*\n\nGunakan kode ini untuk mengatur ulang password. Berlaku {{ttl_menit}} menit.\n\nAbaikan pesan ini bila bukan Anda yang meminta.";
+    case SETTING_KEYS.WA_TPL_OTP_LOGIN:
+      return "{{site}} - Kode login Anda: *{{kode}}*\n\nGunakan kode ini untuk masuk ke akun. Berlaku {{ttl_menit}} menit.\n\nAbaikan pesan ini bila bukan Anda yang mencoba login.";
+    case SETTING_KEYS.WA_TPL_TX_PAID:
+      return "{{site}}\n\nPembayaran transaksi *{{order_id}}* berhasil diterima.\nProduk: {{produk}}\nTujuan: {{tujuan}}\n\nTransaksi sedang diproses, mohon ditunggu.";
+    case SETTING_KEYS.WA_TPL_TX_SUCCESS:
+      return "{{site}}\n\nTransaksi *{{order_id}}* SUKSES ✅\nProduk: {{produk}}\nTujuan: {{tujuan}}\n{{sn_line}}\nTerima kasih telah bertransaksi!";
+    case SETTING_KEYS.WA_TPL_TX_FAILED:
+      return "{{site}}\n\nTransaksi *{{order_id}}* GAGAL ❌\nProduk: {{produk}}\nTujuan: {{tujuan}}\nKeterangan: {{pesan}}\n\nSaldo telah dikembalikan otomatis.";
+    case SETTING_KEYS.WA_LINKED_JID:
+      return "";
+    case SETTING_KEYS.WA_LINKED_AT:
+      return "";
     default:
       return "";
   }
@@ -262,6 +318,79 @@ class SettingsService {
       interval: intervalNorm,
       value: Math.max(1, Number(value) || 1),
       keepDays: Math.max(0, Number(keepDays) || 7),
+    };
+  }
+
+  /**
+   * Konfigurasi WhatsApp lengkap. Dipakai oleh WaService dan UI admin.
+   * Field yang berakhiran *Tpl adalah string template dengan placeholder
+   * {{site}}, {{kode}}, {{ttl_menit}}, {{order_id}}, {{produk}}, {{tujuan}},
+   * {{sn_line}}, {{pesan}}.
+   */
+  async getWaConfig() {
+    const [
+      enabled,
+      linkMethod,
+      pairingPhone,
+      featOtpReg,
+      featOtpReset,
+      featOtpLogin,
+      featNotifTx,
+      ttlSec,
+      cooldownSec,
+      maxAttempt,
+      tplOtpReg,
+      tplOtpReset,
+      tplOtpLogin,
+      tplTxPaid,
+      tplTxSuccess,
+      tplTxFailed,
+      linkedJid,
+      linkedAt,
+    ] = await Promise.all([
+      this.get(SETTING_KEYS.WA_ENABLED),
+      this.get(SETTING_KEYS.WA_LINK_METHOD),
+      this.get(SETTING_KEYS.WA_PAIRING_PHONE),
+      this.get(SETTING_KEYS.WA_FEATURE_OTP_REGISTER),
+      this.get(SETTING_KEYS.WA_FEATURE_OTP_RESET),
+      this.get(SETTING_KEYS.WA_FEATURE_OTP_LOGIN),
+      this.get(SETTING_KEYS.WA_FEATURE_NOTIF_TX),
+      this.get(SETTING_KEYS.WA_OTP_TTL_SEC),
+      this.get(SETTING_KEYS.WA_OTP_RESEND_COOLDOWN_SEC),
+      this.get(SETTING_KEYS.WA_OTP_MAX_ATTEMPT),
+      this.get(SETTING_KEYS.WA_TPL_OTP_REGISTER),
+      this.get(SETTING_KEYS.WA_TPL_OTP_RESET),
+      this.get(SETTING_KEYS.WA_TPL_OTP_LOGIN),
+      this.get(SETTING_KEYS.WA_TPL_TX_PAID),
+      this.get(SETTING_KEYS.WA_TPL_TX_SUCCESS),
+      this.get(SETTING_KEYS.WA_TPL_TX_FAILED),
+      this.get(SETTING_KEYS.WA_LINKED_JID),
+      this.get(SETTING_KEYS.WA_LINKED_AT),
+    ]);
+    return {
+      enabled: enabled === "true",
+      linkMethod: (linkMethod === "pairing" ? "pairing" : "qr") as
+        | "qr"
+        | "pairing",
+      pairingPhone,
+      featureOtpRegister: featOtpReg === "true",
+      featureOtpReset: featOtpReset === "true",
+      featureOtpLogin: featOtpLogin === "true",
+      featureNotifTx: featNotifTx === "true",
+      otpTtlSec: Math.max(60, Math.min(900, Number(ttlSec) || 300)),
+      otpResendCooldownSec: Math.max(
+        15,
+        Math.min(600, Number(cooldownSec) || 60),
+      ),
+      otpMaxAttempt: Math.max(3, Math.min(10, Number(maxAttempt) || 5)),
+      tplOtpRegister: tplOtpReg,
+      tplOtpReset: tplOtpReset,
+      tplOtpLogin: tplOtpLogin,
+      tplTxPaid,
+      tplTxSuccess,
+      tplTxFailed,
+      linkedJid,
+      linkedAt,
     };
   }
 }

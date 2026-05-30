@@ -12,15 +12,15 @@
 #   sudo bash db-restore.sh /path/to/backup.sql.gz                       (auto-decompress)
 #   sudo bash db-restore.sh --yes /path/to/backup.sql                    (skip konfirmasi)
 #   sudo bash db-restore.sh --no-restart backup.sql                      (tidak restart app)
-#   sudo bash db-restore.sh backup.sql.gz --uploads=uploads.tar.gz       (restore juga folder uploads)
-#   sudo bash db-restore.sh --uploads=uploads.tar.gz --no-db backup.sql  (skip DB, hanya uploads)
+#   sudo bash db-restore.sh backup.sql.gz --uploads=data.tar.gz          (restore juga data/ — uploads + wa-session)
+#   sudo bash db-restore.sh --uploads=data.tar.gz --no-db backup.sql     (skip DB, hanya data folder)
 #
 # Yang dilakukan:
 #   1. Validasi file SQL (atau download kalau URL)
 #   2. Backup DB current → /root/backups/pre-restore-YYYYMMDD-HHMMSS.sql
 #   3. Drop semua tabel di DB ptopup
 #   4. Import file SQL backup
-#   5. Restore data/uploads/ kalau --uploads diberikan (auto-backup folder current dulu)
+#   5. Restore data/ (uploads + wa-session) kalau --uploads diberikan (auto-backup folder current dulu)
 #   6. Run `prisma db push` (sync schema kalau ada kolom baru)
 #   7. Restart PM2 ptopup (kecuali --no-restart)
 #
@@ -180,16 +180,17 @@ if [[ -n "$UPLOADS_SOURCE" ]]; then
   else
     [[ ! -f "$UPLOADS_SOURCE" ]] && err "Uploads file gak ada: $UPLOADS_SOURCE"
   fi
-  # Validasi tar valid + struktur (harus mulai dengan data/uploads/)
-  if ! tar -tzf "$UPLOADS_SOURCE" 2>/dev/null | head -1 | grep -q "^data/uploads"; then
-    warn "Bundle gak terlihat berisi data/uploads/ (root path bukan 'data/uploads')."
+  # Validasi tar valid + struktur (harus mulai dengan data/uploads/ atau data/wa-session/)
+  FIRST_ENTRY=$(tar -tzf "$UPLOADS_SOURCE" 2>/dev/null | head -1)
+  if ! echo "$FIRST_ENTRY" | grep -qE "^data/(uploads|wa-session)"; then
+    warn "Bundle gak terlihat berisi data/uploads/ atau data/wa-session/ (root path: $FIRST_ENTRY)."
     if [[ $SKIP_CONFIRM -eq 0 ]]; then
       echo -ne "${YELLOW}Lanjut anyway? (yes/no): ${NC}"
       read -r ANS
       [[ "$ANS" != "yes" ]] && { echo "Dibatalkan."; exit 0; }
     fi
   fi
-  ok "File uploads: $UPLOADS_SOURCE ($(du -h "$UPLOADS_SOURCE" | awk '{print $1}'))"
+  ok "File data bundle: $UPLOADS_SOURCE ($(du -h "$UPLOADS_SOURCE" | awk '{print $1}'))"
 fi
 
 # ============================================================
@@ -262,12 +263,19 @@ if [[ $NO_DB -eq 0 ]]; then
   ok "DB backup: $PRE_BACKUP ($(du -h "$PRE_BACKUP" | awk '{print $1}'))"
 fi
 
-if [[ -n "$UPLOADS_SOURCE" && -d "$APP_DIR/data/uploads" ]]; then
-  PRE_UPLOADS="$BACKUP_DIR/pre-restore-uploads-$(date +%Y%m%d-%H%M%S).tar.gz"
-  log "Backup uploads current ke $PRE_UPLOADS..."
-  tar -czf "$PRE_UPLOADS" -C "$APP_DIR" data/uploads 2>/dev/null && \
-    ok "Uploads backup: $PRE_UPLOADS ($(du -h "$PRE_UPLOADS" | awk '{print $1}'))" || \
-    warn "Backup uploads gagal (non-fatal). Lanjut anyway."
+if [[ -n "$UPLOADS_SOURCE" ]]; then
+  # Backup data/uploads/ + data/wa-session/ kalau ada
+  PRE_DATA_TARGETS=()
+  [[ -d "$APP_DIR/data/uploads" ]] && PRE_DATA_TARGETS+=("data/uploads")
+  [[ -d "$APP_DIR/data/wa-session" ]] && PRE_DATA_TARGETS+=("data/wa-session")
+
+  if [[ ${#PRE_DATA_TARGETS[@]} -gt 0 ]]; then
+    PRE_UPLOADS="$BACKUP_DIR/pre-restore-data-$(date +%Y%m%d-%H%M%S).tar.gz"
+    log "Backup data current ke $PRE_UPLOADS [${PRE_DATA_TARGETS[*]}]..."
+    tar -czf "$PRE_UPLOADS" -C "$APP_DIR" "${PRE_DATA_TARGETS[@]}" 2>/dev/null && \
+      ok "Data backup: $PRE_UPLOADS ($(du -h "$PRE_UPLOADS" | awk '{print $1}'))" || \
+      warn "Backup data gagal (non-fatal). Lanjut anyway."
+  fi
 fi
 
 echo ""
@@ -326,7 +334,7 @@ fi
 # ============================================================
 NEW_UPLOADS="-"
 if [[ -n "$UPLOADS_SOURCE" ]]; then
-  step "5/7 — Restore data/uploads/"
+  step "5/7 — Restore data/ (uploads + wa-session)"
 
   # Stop app dulu (kalau belum di-stop di step 4)
   if [[ $NO_DB -eq 1 && $NO_RESTART -eq 0 ]]; then
@@ -337,10 +345,20 @@ if [[ -n "$UPLOADS_SOURCE" ]]; then
   # Pastikan APP_DIR ada
   [[ ! -d "$APP_DIR" ]] && err "App dir gak ada: $APP_DIR. Deploy dulu."
 
-  # Hapus folder uploads existing (sudah di-backup di step 3)
-  if [[ -d "$APP_DIR/data/uploads" ]]; then
+  # Cek isi bundle untuk tau apa yang akan di-restore
+  HAS_UPLOADS_IN_BUNDLE=0
+  HAS_WA_IN_BUNDLE=0
+  tar -tzf "$UPLOADS_SOURCE" 2>/dev/null | grep -q "^data/uploads" && HAS_UPLOADS_IN_BUNDLE=1
+  tar -tzf "$UPLOADS_SOURCE" 2>/dev/null | grep -q "^data/wa-session" && HAS_WA_IN_BUNDLE=1
+
+  # Hapus folder yang akan di-overwrite (sudah di-backup di step 3)
+  if [[ $HAS_UPLOADS_IN_BUNDLE -eq 1 && -d "$APP_DIR/data/uploads" ]]; then
     log "Hapus data/uploads/ lama..."
     rm -rf "$APP_DIR/data/uploads"
+  fi
+  if [[ $HAS_WA_IN_BUNDLE -eq 1 && -d "$APP_DIR/data/wa-session" ]]; then
+    log "Hapus data/wa-session/ lama..."
+    rm -rf "$APP_DIR/data/wa-session"
   fi
 
   # Pastikan parent dir ada
@@ -348,19 +366,22 @@ if [[ -n "$UPLOADS_SOURCE" ]]; then
 
   # Extract bundle
   log "Extract $UPLOADS_SOURCE → $APP_DIR/..."
-  tar -xzf "$UPLOADS_SOURCE" -C "$APP_DIR" || err "Extract uploads gagal. Cek format file."
+  tar -xzf "$UPLOADS_SOURCE" -C "$APP_DIR" || err "Extract data bundle gagal. Cek format file."
 
   # Pastikan struktur folder lengkap (kalau bundle gak punya semua sub-folder)
   mkdir -p "$APP_DIR/data/uploads"/{avatars,logos,brands,tickets}
+  mkdir -p "$APP_DIR/data/wa-session"
 
   # Re-set ownership ke user app (extract default ke root)
   if id "$APP_USER" >/dev/null 2>&1; then
     chown -R "$APP_USER:$APP_USER" "$APP_DIR/data"
     chmod -R 750 "$APP_DIR/data"
+    chmod 700 "$APP_DIR/data/wa-session" 2>/dev/null || true  # creds WA — extra restrictive
   fi
 
   NEW_UPLOADS=$(find "$APP_DIR/data/uploads" -type f 2>/dev/null | wc -l)
-  ok "Uploads restored: $NEW_UPLOADS file"
+  NEW_WA=$(find "$APP_DIR/data/wa-session" -type f 2>/dev/null | wc -l)
+  ok "Restored: uploads=$NEW_UPLOADS file, wa-session=$NEW_WA file"
 fi
 
 # ============================================================

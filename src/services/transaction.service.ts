@@ -24,6 +24,7 @@ import { balanceService } from "./balance.service";
 import { digiflazzService } from "./digiflazz.service";
 import { duitkuService } from "./duitku.service";
 import { gatewayLogService } from "./gateway-log.service";
+import { waNotifyService } from "./wa-notify.service";
 
 export interface CheckoutInput {
   userId: string;
@@ -199,6 +200,12 @@ export const transactionService = {
       logger.error("tx.executeProvider.async.fail", { id: tx.id, err: String(e) }),
     );
 
+    // notif WA fire-and-forget untuk PAID (BALANCE flow)
+    void waNotifyService.notifyTransactionStatus({
+      transactionId: tx.id,
+      status: TransactionStatus.PAID,
+    });
+
     return {
       orderId,
       status: TransactionStatus.PAID,
@@ -232,6 +239,12 @@ export const transactionService = {
         paidAt: new Date(),
         paymentRef,
       },
+    });
+
+    // notif WA fire-and-forget (tidak boleh ganggu flow)
+    void waNotifyService.notifyTransactionStatus({
+      transactionId: updated.id,
+      status: TransactionStatus.PAID,
     });
 
     // jalankan provider (async)
@@ -289,13 +302,13 @@ export const transactionService = {
    * Refund + tandai FAILED. ACID.
    */
   async failAndRefund(transactionId: string, reason: string) {
-    return prisma.$transaction(async (db) => {
+    const result = await prisma.$transaction(async (db) => {
       const tx = await db.transaction.findUniqueOrThrow({ where: { id: transactionId } });
       if (
         tx.status === TransactionStatus.FAILED ||
         tx.status === TransactionStatus.REFUNDED
       ) {
-        return tx; // idempotent
+        return { tx, changed: false };
       }
 
       if (tx.paymentMethod === PaymentMethod.BALANCE) {
@@ -309,14 +322,24 @@ export const transactionService = {
         });
       }
 
-      return db.transaction.update({
+      const updated = await db.transaction.update({
         where: { id: tx.id },
         data: {
           status: TransactionStatus.FAILED,
           providerMessage: reason,
         },
       });
+      return { tx: updated, changed: true };
     });
+
+    if (result.changed) {
+      void waNotifyService.notifyTransactionStatus({
+        transactionId: result.tx.id,
+        status: TransactionStatus.FAILED,
+      });
+    }
+
+    return result.tx;
   },
 
   /**
@@ -334,7 +357,7 @@ export const transactionService = {
     });
 
     if (data.status === "Sukses") {
-      return prisma.transaction.update({
+      const updated = await prisma.transaction.update({
         where: { id: tx.id },
         data: {
           status: TransactionStatus.SUCCESS,
@@ -342,6 +365,11 @@ export const transactionService = {
           providerMessage: data.message ?? "Sukses",
         },
       });
+      void waNotifyService.notifyTransactionStatus({
+        transactionId: updated.id,
+        status: TransactionStatus.SUCCESS,
+      });
+      return updated;
     }
 
     if (data.status === "Gagal") {

@@ -18,6 +18,7 @@ const ProfileSchema = z.object({
     .optional()
     .nullable()
     .or(z.literal("")),
+  notifWaTx: z.boolean().optional(),
 });
 
 /**
@@ -42,6 +43,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
     role: user.role,
     status: user.status,
     balance: user.balance?.amount.toString() ?? "0",
+    notifWaTx: user.notifWaTx,
     createdAt: user.createdAt,
   });
 });
@@ -69,6 +71,7 @@ export const PATCH = apiHandler(async (req: NextRequest) => {
     data: {
       ...(data.fullName !== undefined && { fullName: data.fullName || null }),
       ...(data.phone !== undefined && { phone: data.phone || null }),
+      ...(data.notifWaTx !== undefined && { notifWaTx: data.notifWaTx }),
     },
   });
 

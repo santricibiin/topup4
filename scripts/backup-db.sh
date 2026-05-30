@@ -11,10 +11,11 @@
 #   sudo bash backup-db.sh --output=/path/to/file    # backup ke file spesifik
 #   sudo bash backup-db.sh --keep=14                 # rotate, hapus backup > 14 hari (default 7)
 #   sudo bash backup-db.sh --no-compress             # output .sql tanpa gzip
-#   sudo bash backup-db.sh --include-uploads         # bundle juga data/uploads/ (avatar, logo, brand, tiket)
+#   sudo bash backup-db.sh --include-uploads         # bundle juga data/uploads/ + data/wa-session/
 #
-# Output filename format: ptopup-YYYYMMDD-HHMMSS.sql.gz
-# Bundle uploads format : ptopup-uploads-YYYYMMDD-HHMMSS.tar.gz
+# Output filename format:
+#   ptopup-YYYYMMDD-HHMMSS.sql.gz          — dump database
+#   ptopup-uploads-YYYYMMDD-HHMMSS.tar.gz  — bundle data/ (uploads + wa-session bila ada)
 #
 # Setup auto-backup harian (jam 03:00):
 #   sudo crontab -e
@@ -94,23 +95,37 @@ fi
 SIZE=$(du -h "$OUTPUT" | awk '{print $1}')
 ok "Backup selesai: $OUTPUT ($SIZE)"
 
-# Optional: bundle data/uploads/ (avatar, logo site, logo brand, lampiran tiket)
+# Optional: bundle data/uploads/ + data/wa-session/ (semua state non-DB)
+#   - data/uploads/   : avatar, logo site, logo brand, lampiran tiket
+#   - data/wa-session/: kredensial Baileys (WhatsApp). Di-bundle supaya restore
+#                       tidak perlu pair ulang QR/pairing code.
 UPLOADS_OUTPUT=""
 if [[ $INCLUDE_UPLOADS -eq 1 ]]; then
-  if [[ -d "$APP_DIR/data/uploads" ]]; then
+  # Tentukan apa yang ada
+  HAS_UPLOADS=0; HAS_WA=0
+  [[ -d "$APP_DIR/data/uploads" ]] && HAS_UPLOADS=1
+  [[ -d "$APP_DIR/data/wa-session" ]] && HAS_WA=1
+
+  if [[ $HAS_UPLOADS -eq 1 || $HAS_WA -eq 1 ]]; then
     TIMESTAMP_U=$(date +%Y%m%d-%H%M%S)
     UPLOADS_OUTPUT="$BACKUP_DIR/ptopup-uploads-${TIMESTAMP_U}.tar.gz"
-    log "Bundling data/uploads/ → $UPLOADS_OUTPUT"
-    tar -czf "$UPLOADS_OUTPUT" -C "$APP_DIR" data/uploads 2>/dev/null || {
-      echo "  Tar gagal (non-fatal). Skip uploads bundle."
+    log "Bundling data/ (uploads + wa-session) → $UPLOADS_OUTPUT"
+
+    # Build list of folders yang ada
+    TAR_TARGETS=()
+    [[ $HAS_UPLOADS -eq 1 ]] && TAR_TARGETS+=("data/uploads")
+    [[ $HAS_WA -eq 1 ]] && TAR_TARGETS+=("data/wa-session")
+
+    tar -czf "$UPLOADS_OUTPUT" -C "$APP_DIR" "${TAR_TARGETS[@]}" 2>/dev/null || {
+      echo "  Tar gagal (non-fatal). Skip data bundle."
       UPLOADS_OUTPUT=""
     }
     if [[ -n "$UPLOADS_OUTPUT" && -s "$UPLOADS_OUTPUT" ]]; then
       U_SIZE=$(du -h "$UPLOADS_OUTPUT" | awk '{print $1}')
-      ok "Uploads bundle: $UPLOADS_OUTPUT ($U_SIZE)"
+      ok "Data bundle: $UPLOADS_OUTPUT ($U_SIZE) [$(IFS=,; echo "${TAR_TARGETS[*]}")]"
     fi
   else
-    log "$APP_DIR/data/uploads tidak ada — skip uploads bundle."
+    log "$APP_DIR/data/{uploads,wa-session} tidak ada — skip data bundle."
   fi
 fi
 
@@ -118,9 +133,9 @@ fi
 if [[ -z "${1:-}" ]] || [[ "$1" == "--keep="* ]] || [[ "$1" == "--no-compress" ]] || [[ "$1" == "--include-uploads" ]]; then
   if [[ -d "$BACKUP_DIR" ]]; then
     DELETED=$(find "$BACKUP_DIR" -name "ptopup-*.sql*" -mtime +$KEEP_DAYS -delete -print 2>/dev/null | wc -l)
-    DELETED_U=$(find "$BACKUP_DIR" -name "ptopup-uploads-*.tar.gz" -mtime +$KEEP_DAYS -delete -print 2>/dev/null | wc -l)
+    DELETED_U=$(find "$BACKUP_DIR" \( -name "ptopup-uploads-*.tar.gz" -o -name "ptopup-data-*.tar.gz" \) -mtime +$KEEP_DAYS -delete -print 2>/dev/null | wc -l)
     [[ $DELETED -gt 0 ]] && ok "Rotated: hapus $DELETED file SQL > $KEEP_DAYS hari"
-    [[ $DELETED_U -gt 0 ]] && ok "Rotated: hapus $DELETED_U file uploads > $KEEP_DAYS hari"
+    [[ $DELETED_U -gt 0 ]] && ok "Rotated: hapus $DELETED_U file data > $KEEP_DAYS hari"
   fi
 fi
 
@@ -128,6 +143,6 @@ echo ""
 echo -e "${YELLOW}Untuk restore:${NC}"
 echo -e "  ${BLUE}sudo bash restore-db.sh --input=$OUTPUT${NC}"
 if [[ -n "$UPLOADS_OUTPUT" ]]; then
-  echo -e "  ${BLUE}sudo tar -xzf $UPLOADS_OUTPUT -C $APP_DIR${NC}  # restore uploads"
+  echo -e "  ${BLUE}sudo tar -xzf $UPLOADS_OUTPUT -C $APP_DIR${NC}  # restore data (uploads + wa-session)"
 fi
 echo ""

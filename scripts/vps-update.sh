@@ -57,7 +57,11 @@ ok "DB schema synced"
 # oleh git reset, tapi kalau install lama tidak punya folder ini, buat sekarang).
 mkdir -p "$APP_DIR/data/uploads/avatars" "$APP_DIR/data/uploads/logos" \
          "$APP_DIR/data/uploads/brands" "$APP_DIR/data/uploads/tickets"
+# Folder kredensial Baileys (WhatsApp) — wajib persistent supaya gak perlu pair ulang
+# setelah update. Di-gitignore.
+mkdir -p "$APP_DIR/data/wa-session"
 chown -R $APP_USER:$APP_USER "$APP_DIR/data"
+chmod 700 "$APP_DIR/data/wa-session" 2>/dev/null || true
 
 # Auto-migrasi legacy uploads kalau update dari versi lama yg masih di public/uploads/.
 if [[ -d "$APP_DIR/public/uploads" ]]; then

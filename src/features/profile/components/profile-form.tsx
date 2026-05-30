@@ -16,6 +16,8 @@ import {
   Upload,
   Trash2,
   Camera,
+  Bell,
+  BellOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -457,5 +459,96 @@ export function PasswordForm() {
         </Button>
       </div>
     </form>
+  );
+}
+
+interface NotifProps {
+  initial: { notifWaTx: boolean };
+  hasPhone: boolean;
+}
+
+export function NotificationForm({ initial, hasPhone }: NotifProps) {
+  const router = useRouter();
+  const [enabled, setEnabled] = useState(initial.notifWaTx);
+  const [saving, setSaving] = useState(false);
+
+  const dirty = enabled !== initial.notifWaTx;
+
+  async function save() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notifWaTx: enabled }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error?.message ?? "Gagal");
+      toast.success("Preferensi notifikasi tersimpan");
+      router.refresh();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {!hasPhone && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+          Tambahkan nomor HP di atas dulu agar bisa menerima notifikasi WhatsApp.
+        </div>
+      )}
+
+      <label
+        className={cn(
+          "flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors",
+          enabled
+            ? "border-primary/40 bg-primary/5"
+            : "border-border hover:bg-muted/40",
+          !hasPhone && "cursor-not-allowed opacity-60",
+        )}
+      >
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4 accent-primary"
+          checked={enabled}
+          disabled={!hasPhone}
+          onChange={(e) => setEnabled(e.target.checked)}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 font-medium">
+            {enabled ? (
+              <Bell className="h-4 w-4 text-primary" />
+            ) : (
+              <BellOff className="h-4 w-4 text-muted-foreground" />
+            )}
+            Notifikasi Transaksi via WhatsApp
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Kirim pesan WA otomatis saat status transaksi berubah (pembayaran
+            diterima, berhasil, gagal/refund). OTP saat daftar & lupa password
+            tetap dikirim apa pun pengaturan ini.
+          </p>
+        </div>
+      </label>
+
+      <div className="flex justify-end">
+        <Button
+          type="button"
+          onClick={save}
+          disabled={saving || !dirty}
+          size="sm"
+        >
+          {saving ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
+          Simpan
+        </Button>
+      </div>
+    </div>
   );
 }

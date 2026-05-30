@@ -18,6 +18,7 @@ Dokumen ini berisi langkah-langkah operasional untuk install, update, backup, da
 12. Checklist Keamanan Pasca Deploy
 13. Deploy untuk Repo Private
 14. Kumpulkan Info untuk Bantuan
+15. WhatsApp Integration (OTP & Notifikasi)
 
 ---
 
@@ -73,7 +74,7 @@ Untuk menghapus instalasi lama dan deploy fresh.
 - Cleanup penuh dengan auto-backup folder uploads:
   ```
   curl -fsSL "https://raw.githubusercontent.com/santricibiin/topup2/main/scripts/cleanup-vps.sh?$(date +%s)" | sudo bash -s -- \
-      --hard --backup-uploads --domain=butuhtopup.net
+      --hard --backup-uploads --domain=jagopay.biz.id
   ```
 - Setelah cleanup selesai, jalankan deploy ulang seperti di Section 1.
 
@@ -207,13 +208,13 @@ Tabel utama:
 
 ## 6. Backup Database dan Uploads
 
-PTopup menyimpan dua jenis data: database MySQL dan folder media (`data/uploads/`). Backup keduanya untuk recovery lengkap.
+PTopup menyimpan tiga jenis state: database MySQL, folder media (`data/uploads/`), dan kredensial WhatsApp (`data/wa-session/`). Backup ketiganya untuk recovery lengkap (kalau wa-session hilang, harus pair ulang QR/pairing code di `/admin/wa`).
 
 - Backup DB saja (ke `/var/backups/ptopup/`, rotasi 7 hari):
   ```
   sudo bash /opt/ptopup/scripts/backup-db.sh
   ```
-- Backup DB + folder uploads (avatar, logo, brand, lampiran tiket):
+- Backup DB + folder data (uploads + wa-session):
   ```
   sudo bash /opt/ptopup/scripts/backup-db.sh --include-uploads
   ```
@@ -225,12 +226,12 @@ PTopup menyimpan dua jenis data: database MySQL dan folder media (`data/uploads/
 - Backup manual cepat:
   ```
   sudo mysqldump ptopup | gzip > /root/manual-$(date +%Y%m%d-%H%M%S).sql.gz
-  sudo tar -czf /root/uploads-$(date +%Y%m%d-%H%M%S).tar.gz -C /opt/ptopup data/uploads
+  sudo tar -czf /root/data-$(date +%Y%m%d-%H%M%S).tar.gz -C /opt/ptopup data/uploads data/wa-session
   ```
 
 Output file:
 - `ptopup-YYYYMMDD-HHMMSS.sql.gz` — dump database
-- `ptopup-uploads-YYYYMMDD-HHMMSS.tar.gz` — bundle folder media
+- `ptopup-uploads-YYYYMMDD-HHMMSS.tar.gz` — bundle uploads + wa-session
 
 Setup backup harian otomatis (jam 3 pagi):
 
@@ -350,7 +351,7 @@ sudo ls -lh /opt/ptopup/backups/
 
 Format file:
 - `ptopup-YYYYMMDD-HHmmss.sql.gz` — auto/manual DB dump
-- `ptopup-uploads-YYYYMMDD-HHmmss.tar.gz` — bundle uploads
+- `ptopup-uploads-YYYYMMDD-HHmmss.tar.gz` — bundle data/ (uploads + wa-session)
 - `uploaded-YYYYMMDD-HHmmss-<original>` — file yang di-upload via UI
 - `pre-restore-uploads-YYYYMMDD-HHmmss.tar.gz` — auto-snapshot sebelum restore uploads
 
@@ -677,6 +678,117 @@ Jangan paste isi `.env` mentah karena berisi kredensial.
 
 ---
 
+## 15. WhatsApp Integration (OTP & Notifikasi)
+
+PTopup punya integrasi WhatsApp via Baileys untuk:
+
+- OTP saat user daftar (verifikasi nomor HP)
+- OTP lupa password
+- Notifikasi otomatis saat status transaksi berubah (PAID / SUCCESS / FAILED)
+
+Sesi WA disimpan di `data/wa-session/` (Baileys multi-file auth state). File ini
+**rahasia** — siapa pun yang dapat folder ini bisa pakai akun WA-mu. Folder ini
+sudah ada di `.gitignore`.
+
+### 15.1 Aktifkan dari Admin UI
+
+1. Login sebagai admin → menu **WhatsApp** di sidebar.
+2. Card **Mode & Master Switch**:
+   - Centang **Aktifkan layanan WhatsApp**.
+   - Pilih metode tautan:
+     - **QR Code** — scan QR di HP utama (mirip WhatsApp Web).
+     - **Pairing Code** — masukkan kode 8 digit di HP, tidak butuh kamera.
+   - Kalau pakai pairing, isi nomor HP di field **Nomor HP default untuk pairing**.
+   - Klik **Simpan**.
+3. Card **Status Koneksi**:
+   - Klik **Hubungkan**.
+   - Tunggu QR / pairing code muncul (max 60 detik).
+   - Scan QR atau masukkan pairing code di HP via **WhatsApp ➜ Perangkat tertaut ➜ Tautkan perangkat**.
+   - Status berubah jadi **Terhubung** dengan badge hijau.
+4. Card **Fitur** — pilih fitur yang aktif:
+   - OTP saat daftar
+   - OTP lupa password
+   - Notifikasi transaksi
+   Atur juga TTL OTP (60–900 detik), cooldown resend, dan max attempt.
+5. Card **Template Pesan** — edit template OTP & notifikasi. Pakai placeholder
+   `{{site}}`, `{{kode}}`, `{{ttl_menit}}`, `{{order_id}}`, `{{produk}}`,
+   `{{tujuan}}`, `{{sn_line}}`, `{{pesan}}`. Klik chip placeholder untuk salin.
+6. Card **Test Kirim** — verifikasi koneksi dengan kirim pesan ke nomor manapun.
+
+### 15.2 Persistence Sesi
+
+Folder `data/wa-session/` berisi:
+
+- `creds.json` — kredensial akun (token, identityKey)
+- `app-state-*.json`, `pre-key-*.json`, `sender-key-*.json`, `session-*.json`
+  — Signal protocol state
+
+Setelah PM2 restart / server reboot, koneksi auto-resume tanpa scan ulang
+selama folder ini utuh dan akun belum di-logout dari HP.
+
+### 15.3 Backup Sesi WA
+
+Sesi WA **otomatis ikut** saat backup uploads:
+
+```bash
+# Manual via CLI
+cd /opt/ptopup
+bash scripts/backup-db.sh         # bikin db.sql.gz + uploads.tar.gz
+```
+
+Bundle `ptopup-uploads-*.tar.gz` berisi `data/uploads/` + `data/wa-session/`.
+Restore bundle juga akan restore sesi WA (folder lama dibersihkan dulu, jadi
+**tidak campur** file lama + baru).
+
+Atau lewat Admin UI ➜ menu **Backup** ➜ tombol **Backup Uploads**.
+
+### 15.4 Putuskan / Logout
+
+- Tombol **Hentikan** — close socket tanpa logout. Sesi tetap tersimpan, bisa
+  re-connect lagi.
+- Tombol **Putuskan & Hapus Sesi** — full logout + hapus folder
+  `data/wa-session/`. Akun WA juga keluar dari **Perangkat tertaut** di HP.
+  Setelah ini wajib scan ulang.
+
+### 15.5 Troubleshooting
+
+**QR / pairing code expired sebelum sempat scan:**
+- TTL default 60 detik. Klik **Hubungkan** lagi untuk dapat QR baru.
+
+**Status balik ke `LOGGED_OUT` setelah beberapa jam:**
+- User keluar dari **Perangkat tertaut** di HP, atau WA mendeteksi anomali
+  (multi-login, IP change ekstrim).
+- Klik **Hubungkan** lagi → scan ulang.
+
+**Error `Cannot find module '@whiskeysockets/baileys'`:**
+- Dependency belum terinstall. Run: `npm install` di server.
+
+**Error spawn ENOENT (tar) saat backup:**
+- Pastikan `tar` terinstall: `which tar` (di Linux/macOS biasanya sudah ada).
+  Untuk Windows server, install Git Bash atau WSL.
+
+**Notifikasi transaksi tidak terkirim:**
+- Cek master switch ON di admin UI.
+- Cek toggle **Notifikasi transaksi** ON di card **Fitur**.
+- Cek user punya nomor HP di profil & toggle `notifWaTx` (default ON).
+- Cek status WA = **Terhubung** (bukan ERROR / DISCONNECTED).
+
+**OTP tidak sampai ke user:**
+- Test kirim dari Card **Test Kirim** dulu untuk pastikan koneksi sehat.
+- Cek nomor user format E.164 (62...). User input `08xx`/`+62xx` di-normalize
+  otomatis di server.
+- Cek nomor user terdaftar di WhatsApp (kalau bukan WA user, OTP tidak terkirim).
+
+### 15.6 Keamanan
+
+- **Jangan commit** folder `data/wa-session/` ke git. Sudah ada di `.gitignore`.
+- File backup `*.tar.gz` yang berisi sesi WA harus dijaga sama ketatnya dengan
+  file `.env`. Jangan share publik.
+- Akun WA yang dipakai untuk OTP sebaiknya **akun terpisah** (bukan akun
+  pribadi admin) — bisa pakai nomor virtual / SIM khusus.
+
+---
+
 ## Referensi Lokasi File Penting
 
 | Item | Path |
@@ -684,6 +796,7 @@ Jangan paste isi `.env` mentah karena berisi kredensial.
 | Folder app | `/opt/ptopup` |
 | Source code | `/opt/ptopup/src/` |
 | Folder media | `/opt/ptopup/data/uploads/{avatars,logos,brands,tickets}` |
+| Sesi WhatsApp | `/opt/ptopup/data/wa-session/` |
 | Build artifact | `/opt/ptopup/.next/` |
 | Konfigurasi env | `/opt/ptopup/.env` |
 | Password DB | `/root/.ptopup-db-password` |

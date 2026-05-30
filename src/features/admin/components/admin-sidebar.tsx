@@ -13,6 +13,7 @@ import {
   Database,
   ImageIcon,
   LifeBuoy,
+  MessageCircle,
   ArrowLeft,
   PanelLeftClose,
   PanelLeftOpen,
@@ -35,6 +36,7 @@ const NAV = [
   { href: "/admin/users", label: "Pengguna", icon: Users },
   { href: "/admin/provider", label: "Provider", icon: Plug },
   { href: "/admin/backup", label: "Backup", icon: Database },
+  { href: "/admin/wa", label: "WhatsApp", icon: MessageCircle },
   { href: "/admin/settings", label: "Pengaturan", icon: Settings },
 ] as const;
 
