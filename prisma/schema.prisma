@@ -1,0 +1,546 @@
+// =========================================================
+// PTOPUP — Prisma Schema (MySQL)
+// Models: User, Balance, Transaction, Product, PaymentGatewayLog
+// Design notes:
+// - All money/saldo fields use Decimal(18, 2) — never Float.
+// - Every status uses enum (no magic strings).
+// - Strict referential integrity, indexed for query speed.
+// - All transaction mutations must be wrapped in prisma.$transaction().
+// =========================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextIndex", "fullTextSearch"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------
+// ENUMS
+// ---------------------------------------------------------
+enum UserRole {
+  USER
+  ADMIN
+  RESELLER
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum ProductCategory {
+  PULSA
+  DATA
+  PLN
+  GAME
+  EWALLET
+  VOUCHER
+  PASCABAYAR
+  STREAMING
+  AKTIVASI_VOUCHER
+  PAKET_SMS_TELPON
+  MASA_AKTIF
+  TV_KABEL
+  GAS
+  BPJS
+  ASURANSI
+  PDAM
+  TRANSPORTASI
+  SEMBAKO
+  OTHER
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  GANGGUAN
+}
+
+enum TransactionStatus {
+  PENDING        // dibuat, menunggu pembayaran
+  PAID           // pembayaran lunas, antri ke provider
+  PROCESSING     // sudah dikirim ke Digiflazz, menunggu callback
+  SUCCESS        // sukses dari provider
+  FAILED         // gagal di provider (saldo direfund)
+  REFUNDED       // refund manual
+  EXPIRED        // invoice kadaluarsa
+  CANCELLED      // dibatalkan user / sistem
+}
+
+enum PaymentMethod {
+  BALANCE        // bayar pakai saldo internal
+  DUITKU_VA
+  DUITKU_QRIS
+  DUITKU_EWALLET
+  DUITKU_RETAIL
+  DUITKU_OTHER
+}
+
+enum BalanceMutationType {
+  TOPUP          // user isi saldo
+  PURCHASE       // potongan untuk transaksi
+  REFUND         // refund dari transaksi gagal
+  ADJUSTMENT     // koreksi manual admin
+  COMMISSION     // komisi reseller
+}
+
+enum DepositStatus {
+  PENDING
+  SUCCESS
+  EXPIRED
+  CANCELLED
+  FAILED
+}
+
+enum DepositMethod {
+  QRIS
+  DANA
+}
+
+enum GatewayProvider {
+  DIGIFLAZZ
+  DUITKU
+}
+
+enum GatewayLogDirection {
+  REQUEST
+  RESPONSE
+  WEBHOOK
+}
+
+enum TicketStatus {
+  OPEN              // baru dibuat user, belum direspon admin
+  AWAITING_ADMIN    // bola di admin (user sudah balas)
+  AWAITING_USER     // bola di user (admin sudah balas)
+  RESOLVED          // admin tandai selesai, user masih bisa balas → reopen
+  CLOSED            // tidak bisa balas lagi
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TicketCategory {
+  TRANSACTION       // masalah top-up / order
+  DEPOSIT           // masalah isi saldo
+  ACCOUNT           // login, password, profil
+  PRODUCT           // pertanyaan produk
+  GENERAL           // umum / saran
+  OTHER
+}
+
+enum TicketAuthorType {
+  USER
+  ADMIN
+  SYSTEM            // catatan otomatis (status change, dst.)
+}
+
+// ---------------------------------------------------------
+// USER
+// ---------------------------------------------------------
+model User {
+  id            String      @id @default(cuid())
+  email         String      @unique
+  username      String      @unique
+  phone         String?     @unique
+  passwordHash  String      @map("password_hash")
+  fullName      String?     @map("full_name")
+  avatarUrl     String?     @map("avatar_url") @db.VarChar(500)
+  role          UserRole    @default(USER)
+  status        UserStatus  @default(ACTIVE)
+  emailVerified DateTime?   @map("email_verified")
+  lastLoginAt   DateTime?   @map("last_login_at")
+
+  // Relations
+  balance       Balance?
+  mutations     BalanceMutation[]
+  transactions  Transaction[]
+  sessions      Session[]
+  deposits      Deposit[]
+  tickets        Ticket[]   @relation("TicketOwner")
+  assignedTickets Ticket[]  @relation("TicketAssignee")
+
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  @@index([role, status])
+  @@map("users")
+}
+
+// ---------------------------------------------------------
+// SESSION — token-based auth, bisa di-revoke dari sisi server.
+// ---------------------------------------------------------
+model Session {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  token     String   @unique @db.VarChar(128)
+  userAgent String?  @map("user_agent") @db.VarChar(512)
+  ipAddress String?  @map("ip_address") @db.VarChar(64)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ---------------------------------------------------------
+// BALANCE — saldo internal user (1:1)
+// Pisah dari User agar update saldo tidak men-trigger
+// re-write seluruh row User dan lebih aman untuk locking row.
+// ---------------------------------------------------------
+model Balance {
+  id        String   @id @default(cuid())
+  userId    String   @unique @map("user_id")
+  amount    Decimal  @default(0) @db.Decimal(18, 2)
+  // optimistic locking — bump tiap update untuk mencegah race condition
+  version   Int      @default(0)
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("balances")
+}
+
+// ---------------------------------------------------------
+// BALANCE MUTATION — audit trail seluruh perubahan saldo
+// Wajib di-insert di dalam prisma.$transaction() bersama
+// update Balance.amount.
+// ---------------------------------------------------------
+model BalanceMutation {
+  id            String              @id @default(cuid())
+  userId        String              @map("user_id")
+  type          BalanceMutationType
+  amount        Decimal             @db.Decimal(18, 2) // signed: + masuk, - keluar
+  balanceBefore Decimal             @map("balance_before") @db.Decimal(18, 2)
+  balanceAfter  Decimal             @map("balance_after") @db.Decimal(18, 2)
+  description   String?             @db.VarChar(255)
+  referenceId   String?             @map("reference_id") // id transaksi terkait
+  referenceType String?             @map("reference_type") // "TRANSACTION" | "MANUAL" | dst.
+
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime            @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([referenceId])
+  @@map("balance_mutations")
+}
+
+// ---------------------------------------------------------
+// PRODUCT — katalog layanan dari Digiflazz
+// Sinkron via cron / endpoint admin.
+// ---------------------------------------------------------
+model Product {
+  id              String          @id @default(cuid())
+  // Kode unik dari Digiflazz (buyer_sku_code)
+  sku             String          @unique @db.VarChar(64)
+  name            String          @db.VarChar(160)
+  brand           String          @db.VarChar(64)
+  category        ProductCategory
+  type            String          @db.VarChar(64) // contoh: "Umum", "Diamond", "Mobile Legends"
+  description     String?         @db.Text
+
+  // Harga
+  basePrice       Decimal         @map("base_price") @db.Decimal(18, 2)   // dari Digiflazz
+  sellPrice       Decimal         @map("sell_price") @db.Decimal(18, 2)   // harga ke user
+  resellerPrice   Decimal?        @map("reseller_price") @db.Decimal(18, 2)
+
+  // Operasional
+  status          ProductStatus   @default(ACTIVE)
+  isCutoff        Boolean         @default(false) @map("is_cutoff")
+  cutoffStart     String?         @map("cutoff_start") @db.VarChar(8)     // "HH:mm"
+  cutoffEnd       String?         @map("cutoff_end") @db.VarChar(8)
+  multi           Boolean         @default(false)
+  stock           Int?
+  // Produk pascabayar (tagihan): flow inquiry → pay, harga dari inquiry runtime.
+  isPostpaid      Boolean         @default(false) @map("is_postpaid")
+
+  // Metadata Digiflazz (raw payload untuk audit)
+  providerMeta    Json?           @map("provider_meta")
+
+  transactions    Transaction[]
+
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  @@index([category, status])
+  @@index([brand])
+  @@map("products")
+}
+
+// ---------------------------------------------------------
+// TRANSACTION — order utama user
+// Satu transaksi = satu invoice = satu order ke Digiflazz.
+// ---------------------------------------------------------
+model Transaction {
+  id              String            @id @default(cuid())
+  // ID order yang dipakai di seluruh sistem (Duitku merchantOrderId & Digiflazz ref_id)
+  orderId         String            @unique @map("order_id") @db.VarChar(48)
+
+  userId          String            @map("user_id")
+  productId       String?           @map("product_id")
+
+  // Snapshot harga saat transaksi (jangan ambil dari Product runtime — harga bisa berubah)
+  productSku      String            @map("product_sku") @db.VarChar(64)
+  productName     String            @map("product_name") @db.VarChar(160)
+  basePrice       Decimal           @map("base_price") @db.Decimal(18, 2)
+  sellPrice       Decimal           @map("sell_price") @db.Decimal(18, 2)
+  adminFee        Decimal           @default(0) @map("admin_fee") @db.Decimal(18, 2)
+  totalAmount     Decimal           @map("total_amount") @db.Decimal(18, 2)
+
+  // Tujuan pengisian
+  customerNo      String            @map("customer_no") @db.VarChar(64)  // nomor HP / ID game / meter PLN
+  customerName    String?           @map("customer_name") @db.VarChar(120)
+  serverId        String?           @map("server_id") @db.VarChar(64)    // utk game (Zone ID dll)
+
+  // Pembayaran
+  paymentMethod   PaymentMethod     @map("payment_method")
+  paymentChannel  String?           @map("payment_channel") @db.VarChar(32) // kode Duitku (BCA, OVO, dst)
+  paymentRef      String?           @map("payment_ref") @db.VarChar(80)     // referensi dari Duitku
+  paymentUrl      String?           @map("payment_url") @db.Text
+  paidAt          DateTime?         @map("paid_at")
+  expiredAt       DateTime?         @map("expired_at")
+
+  // Provider (Digiflazz)
+  providerRef     String?           @map("provider_ref") @db.VarChar(80)    // ref_id digiflazz
+  providerSn      String?           @map("provider_sn") @db.VarChar(160)    // serial number / token PLN
+  providerMessage String?           @map("provider_message") @db.VarChar(255)
+  // Pascabayar: hasil inquiry tagihan (detail lembar, periode, denda, dll).
+  inquiryData     Json?             @map("inquiry_data")
+
+  // Status
+  status          TransactionStatus @default(PENDING)
+
+  // Relations
+  user            User              @relation(fields: [userId], references: [id])
+  // Optional supaya tx tidak rusak kalau product di-hapus admin
+  // (productSku/productName sudah di-snapshot di row tx ini).
+  product         Product?          @relation(fields: [productId], references: [id], onDelete: SetNull)
+  gatewayLogs     PaymentGatewayLog[]
+
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@index([paymentRef])
+  @@index([providerRef])
+  @@map("transactions")
+}
+
+// ---------------------------------------------------------
+// PAYMENT GATEWAY LOG — audit semua hit ke / dari provider
+// (Digiflazz & Duitku). Wajib disimpan untuk debugging,
+// reconciliation, dan validasi signature.
+// ---------------------------------------------------------
+model PaymentGatewayLog {
+  id            String              @id @default(cuid())
+  transactionId String?             @map("transaction_id")
+  provider      GatewayProvider
+  direction     GatewayLogDirection
+  endpoint      String              @db.VarChar(255)
+  httpStatus    Int?                @map("http_status")
+  signature     String?             @db.VarChar(160)
+  // Payload mentah — JANGAN log kredensial / api key.
+  // Sanitasi sebelum insert.
+  payload       Json?
+  errorMessage  String?             @map("error_message") @db.Text
+
+  transaction   Transaction?        @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  createdAt     DateTime            @default(now()) @map("created_at")
+
+  @@index([transactionId])
+  @@index([provider, direction, createdAt])
+  @@map("payment_gateway_logs")
+}
+
+// ---------------------------------------------------------
+// DEPOSIT — top-up saldo via QRIS / DANA dengan unique code matching.
+// Flow:
+//  1. User input nominal → sistem generate unique code (3 digit) → totalAmount.
+//  2. Generate QRIS dynamic dengan totalAmount.
+//  3. User bayar; notifikasi DANA push ke webhook /api/webhooks/dana-callback.
+//  4. Webhook match amount terhadap pending deposit, mark SUCCESS, kredit balance.
+// ---------------------------------------------------------
+model Deposit {
+  id           String        @id @default(cuid())
+  userId       String        @map("user_id")
+  method       DepositMethod @default(DANA)
+  amount       Decimal       @db.Decimal(18, 2)            // nominal request user
+  uniqueCode   Int           @map("unique_code")           // 3 digit pembeda
+  totalAmount  Decimal       @map("total_amount") @db.Decimal(18, 2) // amount + uniqueCode
+  status       DepositStatus @default(PENDING)
+  qrisPayload  String?       @map("qris_payload") @db.Text  // EMVCo dynamic QRIS string
+  description  String?       @db.VarChar(255)
+  paidAt       DateTime?     @map("paid_at")
+  expiresAt    DateTime      @map("expires_at")
+  // Detail dari notifikasi DANA saat match (JSON-stringified).
+  callbackRaw  String?       @map("callback_raw") @db.Text
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  // Index unik komposit untuk pencegahan duplikat unique amount aktif:
+  // Webhook akan mencari (totalAmount, status=PENDING) → harus unik supaya
+  // gak ambigu saat 2 user kebetulan request nominal akhir yg sama.
+  @@unique([totalAmount, status], name: "uniq_amount_status")
+  @@index([userId, createdAt])
+  @@index([status, expiresAt])
+  @@map("deposits")
+}
+
+// ---------------------------------------------------------
+// SETTING — key/value untuk konfigurasi runtime
+// (kredensial provider, markup, fitur flag, dll).
+// Value selalu string; parsing dilakukan di service layer.
+// ---------------------------------------------------------
+// ---------------------------------------------------------
+// CATEGORY SETTING — kustomisasi tampilan kategori di /topup.
+// Admin bisa: rename label, ganti icon (lucide name), ganti gradient,
+// hide, tambah badge (mis. "BARU", "PROMO"), atur urutan.
+// Key = enum value (PULSA, DATA, ...).
+// ---------------------------------------------------------
+model CategorySetting {
+  category    ProductCategory @id
+  label       String?         @db.VarChar(40)
+  iconName    String?         @map("icon_name") @db.VarChar(40)   // nama lucide-react (mis. "Smartphone")
+  gradient    String?         @db.VarChar(120)                     // tailwind class, mis. "from-emerald-500 to-teal-600"
+  badge       String?         @db.VarChar(20)                      // mis. "BARU", "PROMO"
+  hidden      Boolean         @default(false)
+  sortOrder   Int             @default(0) @map("sort_order")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  @@map("category_settings")
+}
+
+model Setting {
+  key       String   @id @db.VarChar(80)
+  value     String   @db.Text
+  // Kalau true, value disensor saat dikirim ke client (mis. apiKey).
+  isSecret  Boolean  @default(false) @map("is_secret")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+// ---------------------------------------------------------
+// BRAND ASSET — kustomisasi tampilan brand (logo, urutan, visibility).
+// Brand adalah string distinct dari Product.brand. Asset ini dipakai
+// admin untuk meng-upload logo brand sendiri (override default Iconify).
+// Disimpan terpisah supaya sync produk Digiflazz tidak menimpa logo upload.
+// ---------------------------------------------------------
+model BrandAsset {
+  id          String           @id @default(cuid())
+  brand       String           @unique @db.VarChar(120) // canonical, sama dgn Product.brand
+  slug        String           @unique @db.VarChar(120) // slugify(brand) — dipakai URL & nama file
+  logoUrl     String?          @map("logo_url") @db.VarChar(255)
+  // Kalau di-set, brand di-pin ke kategori ini di panel admin.
+  // Brand tetap muncul di kategori asli (dari Product) sebagai sumber kebenaran.
+  category    ProductCategory?
+  sortOrder   Int              @default(0) @map("sort_order")
+  isVisible   Boolean          @default(true) @map("is_visible")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@index([sortOrder])
+  @@map("brand_assets")
+}
+
+// ---------------------------------------------------------
+// TICKET — sistem bantuan/support antara user dan admin.
+// 1 tiket → banyak message → tiap message bisa banyak attachment.
+// File attachment disimpan DI LUAR public/ (data/uploads/tickets/<id>/...)
+// dan dilayani via API authenticated. Hanya owner / admin yang bisa download.
+// ---------------------------------------------------------
+model Ticket {
+  id                   String          @id @default(cuid())
+  ticketNumber         String          @unique @map("ticket_number") @db.VarChar(32)
+  userId               String          @map("user_id")
+  subject              String          @db.VarChar(160)
+  category             TicketCategory  @default(GENERAL)
+  status               TicketStatus    @default(OPEN)
+  priority             TicketPriority  @default(NORMAL)
+  // Auto-link kalau dibuat dari halaman transaksi / deposit (snapshot id saja).
+  relatedOrderId       String?         @map("related_order_id") @db.VarChar(48)
+  relatedDepositId     String?         @map("related_deposit_id")
+  assignedAdminId      String?         @map("assigned_admin_id")
+  // Buat sorting & badge unread.
+  lastMessageAt        DateTime        @default(now()) @map("last_message_at")
+  userLastReadAt       DateTime?       @map("user_last_read_at")
+  adminLastReadAt      DateTime?       @map("admin_last_read_at")
+  resolvedAt           DateTime?       @map("resolved_at")
+  closedAt             DateTime?       @map("closed_at")
+
+  user                 User            @relation("TicketOwner", fields: [userId], references: [id], onDelete: Cascade)
+  assignedAdmin        User?           @relation("TicketAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  messages             TicketMessage[]
+
+  createdAt            DateTime        @default(now()) @map("created_at")
+  updatedAt            DateTime        @updatedAt @map("updated_at")
+
+  @@index([userId, status])
+  @@index([status, lastMessageAt])
+  @@index([assignedAdminId, status])
+  @@map("tickets")
+}
+
+// ---------------------------------------------------------
+// TICKET MESSAGE — chat per balasan.
+// authorType=SYSTEM dipakai untuk catatan otomatis (status change).
+// isInternal=true → catatan admin yang TIDAK terlihat user.
+// ---------------------------------------------------------
+model TicketMessage {
+  id          String              @id @default(cuid())
+  ticketId    String              @map("ticket_id")
+  authorType  TicketAuthorType    @map("author_type")
+  authorId    String?             @map("author_id") // null kalau SYSTEM
+  body        String              @db.Text
+  isInternal  Boolean             @default(false) @map("is_internal")
+
+  ticket      Ticket              @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  attachments TicketAttachment[]
+
+  createdAt   DateTime            @default(now()) @map("created_at")
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_messages")
+}
+
+// ---------------------------------------------------------
+// TICKET ATTACHMENT — file lampiran (gambar / PDF).
+// `storageKey` adalah path RELATIF di dalam folder data/uploads/tickets,
+// mis. "<ticketId>/<random>.png". JANGAN simpan absolute path.
+// Akses lewat API → cek owner sebelum stream.
+// ---------------------------------------------------------
+model TicketAttachment {
+  id           String        @id @default(cuid())
+  messageId    String        @map("message_id")
+  storageKey   String        @map("storage_key") @db.VarChar(255)
+  originalName String        @map("original_name") @db.VarChar(255)
+  mimeType     String        @map("mime_type") @db.VarChar(100)
+  size         Int
+
+  message      TicketMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  @@index([messageId])
+  @@map("ticket_attachments")
+}
