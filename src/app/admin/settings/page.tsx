@@ -53,6 +53,7 @@ export default async function AdminSettingsPage() {
                 tagline: branding.tagline,
                 logoUrl: branding.logoUrl,
                 theme: branding.theme,
+                background: branding.background,
               }}
             />
           </CardContent>

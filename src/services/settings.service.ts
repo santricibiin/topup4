@@ -23,6 +23,7 @@ export const SETTING_KEYS = {
   SITE_TAGLINE: "site.tagline",
   SITE_LOGO_URL: "site.logoUrl",
   SITE_THEME: "site.theme",                    // preset key (mis. "emerald", "violet", "amber") atau "custom:HSL"
+  SITE_BACKGROUND: "site.background",          // pola background global (lihat background-presets.ts)
   // Deposit / Payment
   DEPOSIT_QRIS_CODE: "deposit.qrisCode",       // EMVCo string QRIS statis
   DEPOSIT_CALLBACK_SECRET: "deposit.callbackSecret", // secret utk validasi webhook
@@ -95,6 +96,8 @@ function envDefault(key: SettingKey): string {
       return "";
     case SETTING_KEYS.SITE_THEME:
       return "emerald";
+    case SETTING_KEYS.SITE_BACKGROUND:
+      return "batik";
     case SETTING_KEYS.DEPOSIT_QRIS_CODE:
       return "";
     case SETTING_KEYS.DEPOSIT_CALLBACK_SECRET:
@@ -272,13 +275,20 @@ class SettingsService {
   }
 
   async getSiteBranding() {
-    const [name, tagline, logoUrl, theme] = await Promise.all([
+    const [name, tagline, logoUrl, theme, background] = await Promise.all([
       this.get(SETTING_KEYS.SITE_NAME),
       this.get(SETTING_KEYS.SITE_TAGLINE),
       this.get(SETTING_KEYS.SITE_LOGO_URL),
       this.get(SETTING_KEYS.SITE_THEME),
+      this.get(SETTING_KEYS.SITE_BACKGROUND),
     ]);
-    return { name: name || "PTopup", tagline, logoUrl, theme: theme || "emerald" };
+    return {
+      name: name || "PTopup",
+      tagline,
+      logoUrl,
+      theme: theme || "emerald",
+      background: background || "batik",
+    };
   }
 
   async getDepositConfig() {

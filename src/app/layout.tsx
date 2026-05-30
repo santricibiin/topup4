@@ -7,6 +7,7 @@ import { BottomNav } from "@/components/layout/bottom-nav";
 import { getCurrentUser } from "@/server/auth";
 import { settingsService } from "@/services/settings.service";
 import { generateThemeCSS } from "@/lib/theme-presets";
+import { resolveBackground } from "@/lib/background-presets";
 import { cn } from "@/lib/utils";
 import "./globals.css";
 
@@ -65,6 +66,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     settingsService.getSiteBranding(),
   ]);
   const themeCss = generateThemeCSS(branding.theme);
+  const background = resolveBackground(branding.background);
 
   return (
     <html lang="id" suppressHydrationWarning>
@@ -72,6 +74,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <style id="ptopup-theme" dangerouslySetInnerHTML={{ __html: themeCss }} />
       </head>
       <body
+        data-bg={background}
         className={cn(
           "flex min-h-screen flex-col font-sans antialiased",
           sans.variable,
