@@ -73,9 +73,10 @@ export default async function TopupBrandPage({ params, searchParams }: PageProps
     categoryParam && isValidCategory(categoryParam) ? categoryParam : undefined;
 
   // Resolve brand + fetch products + iconSize PARALEL.
-  const [brand, iconSizeRaw] = await Promise.all([
+  const [brand, iconSizeRaw, branding] = await Promise.all([
     resolveBrand(slug),
     settingsService.get(SETTING_KEYS.TOPUP_ICON_SIZE),
+    settingsService.getSiteBranding(),
   ]);
 
   if (!brand) notFound();
@@ -138,6 +139,7 @@ export default async function TopupBrandPage({ params, searchParams }: PageProps
             <PostpaidFlow
               brand={brand}
               category={finalCategory}
+              siteName={branding.name}
               products={products.map((p) => ({
                 id: p.id,
                 sku: p.sku,
@@ -152,6 +154,7 @@ export default async function TopupBrandPage({ params, searchParams }: PageProps
               brand={brand}
               category={finalCategory}
               iconSize={iconSize}
+              siteName={branding.name}
               products={products.map((p) => ({
                 id: p.id,
                 sku: p.sku,

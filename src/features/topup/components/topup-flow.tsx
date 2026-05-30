@@ -40,6 +40,8 @@ interface Props {
   products: ProductDTO[];
   /** Master scale (40-96 px). Berasal dari setting topup.iconSize. Default 56. */
   iconSize?: number;
+  /** Nama situs yang di-set admin (branding). Dipakai di label pembayaran. */
+  siteName: string;
 }
 
 const STEPS = ["Data Akun", "Pilih Nominal"] as const;
@@ -285,7 +287,7 @@ function getConfig(category: string, brand: string): CategoryConfig {
   return cfg;
 }
 
-export function TopupFlow({ brand, category, products, iconSize = 56 }: Props) {
+export function TopupFlow({ brand, category, products, iconSize = 56, siteName }: Props) {
   const router = useRouter();
   const config = getConfig(category, brand);
   const FieldIcon = config.icon;
@@ -518,6 +520,7 @@ export function TopupFlow({ brand, category, products, iconSize = 56 }: Props) {
           serverId={serverId}
           product={selectedProduct}
           submitting={submitting}
+          siteName={siteName}
           onClose={() => !submitting && setConfirmOpen(false)}
           onConfirm={handleCheckout}
         />
@@ -534,6 +537,7 @@ interface ConfirmDialogProps {
   serverId: string;
   product: ProductDTO;
   submitting: boolean;
+  siteName: string;
   onClose: () => void;
   onConfirm: () => void;
 }
@@ -546,6 +550,7 @@ function ConfirmDialog({
   serverId,
   product,
   submitting,
+  siteName,
   onClose,
   onConfirm,
 }: ConfirmDialogProps) {
@@ -627,7 +632,7 @@ function ConfirmDialog({
 
           <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
             <Wallet className="h-4 w-4 text-primary" />
-            Pembayaran via Saldo PTopup
+            Pembayaran via Saldo {siteName}
           </div>
         </div>
 

@@ -38,6 +38,8 @@ interface Props {
   brand: string;
   category: string;
   products: ProductDTO[];
+  /** Nama situs yang di-set admin (branding). Dipakai di label pembayaran. */
+  siteName: string;
 }
 
 interface BillDetailRow {
@@ -73,7 +75,7 @@ interface InquiryResult {
  * Flow pascabayar (tagihan): pilih produk → cek tagihan (inquiry) →
  * tampilkan rincian tagihan → bayar.
  */
-export function PostpaidFlow({ brand, products }: Props) {
+export function PostpaidFlow({ brand, products, siteName }: Props) {
   const router = useRouter();
 
   const [selectedSku, setSelectedSku] = useState<string>(
@@ -308,6 +310,7 @@ export function PostpaidFlow({ brand, products }: Props) {
           brand={brand}
           bill={bill}
           paying={paying}
+          siteName={siteName}
           onClose={() => !paying && setConfirmOpen(false)}
           onConfirm={handlePay}
         />
@@ -327,6 +330,7 @@ interface ConfirmPayDialogProps {
   brand: string;
   bill: InquiryResult;
   paying: boolean;
+  siteName: string;
   onClose: () => void;
   onConfirm: () => void;
 }
@@ -335,6 +339,7 @@ function ConfirmPayDialog({
   brand,
   bill,
   paying,
+  siteName,
   onClose,
   onConfirm,
 }: ConfirmPayDialogProps) {
@@ -412,7 +417,7 @@ function ConfirmPayDialog({
 
           <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
             <Wallet className="h-4 w-4 text-primary" />
-            Pembayaran via Saldo PTopup
+            Pembayaran via Saldo {siteName}
           </div>
         </div>
 
