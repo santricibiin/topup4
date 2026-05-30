@@ -7,10 +7,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { settingsService } from "@/services/settings.service";
+import { waService } from "@/services/wa.service";
 
 export const metadata = { title: "Masuk" };
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const cfg = await settingsService.getWaConfig();
+  const forgotEnabled =
+    cfg.enabled && cfg.featureOtpReset && waService.isReady();
+
   return (
     <Card>
       <CardHeader>
@@ -20,7 +28,7 @@ export default function LoginPage() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <LoginForm />
+        <LoginForm showForgotLink={forgotEnabled} />
         <p className="text-center text-sm text-muted-foreground">
           Belum punya akun?{" "}
           <Link href="/register" className="text-primary hover:underline">

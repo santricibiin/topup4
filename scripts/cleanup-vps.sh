@@ -23,7 +23,7 @@
 #   sudo bash cleanup-vps.sh --remove-user      (juga hapus user ptopup)
 #   sudo bash cleanup-vps.sh --remove-ssl       (juga revoke SSL cert)
 #   sudo bash cleanup-vps.sh --domain=DOMAIN    (untuk SSL & nginx domain spesifik)
-#   sudo bash cleanup-vps.sh --backup-uploads   (tar.gz data/uploads/ ke /root/backups dulu sebelum dihapus)
+#   sudo bash cleanup-vps.sh --backup-uploads   (tar.gz data/uploads/ + data/wa-session/ ke /root/backups dulu sebelum dihapus)
 #   sudo bash cleanup-vps.sh --hard             (full nuke: user + ssl + everything)
 #
 # =================================================================
@@ -81,6 +81,19 @@ if [[ -d "$APP_DIR/data/uploads" ]]; then
   fi
 fi
 
+# Highlight juga wa-session (kredensial Baileys / WhatsApp)
+if [[ -d "$APP_DIR/data/wa-session" ]]; then
+  WA_SIZE=$(du -sh "$APP_DIR/data/wa-session" 2>/dev/null | awk '{print $1}')
+  WA_COUNT=$(find "$APP_DIR/data/wa-session" -type f 2>/dev/null | wc -l)
+  echo -e "  ${RED}⚠  data/wa-session/ ($WA_COUNT file, $WA_SIZE)${NC}"
+  echo -e "     ${YELLOW}berisi kredensial Baileys WhatsApp. Hilang → wajib pair ulang QR/pairing.${NC}"
+  if [[ $BACKUP_UPLOADS -eq 1 ]]; then
+    echo -e "     ${GREEN}→ akan ikut di-bundle ke /root/backups/${NC}"
+  else
+    echo -e "     ${RED}→ AKAN HILANG. Tambahkan --backup-uploads kalau mau di-backup.${NC}"
+  fi
+fi
+
 [[ $REMOVE_USER -eq 1 ]] && echo -e "  User $APP_USER         : ${RED}akan dihapus${NC}"
 [[ $REMOVE_SSL -eq 1 ]] && [[ -n "$DOMAIN" ]] && echo -e "  SSL cert $DOMAIN       : ${RED}akan revoke${NC}"
 echo ""
@@ -88,14 +101,20 @@ echo -ne "${YELLOW}Lanjut? (ketik 'yes' untuk konfirmasi): ${NC}"
 read -r CONFIRM
 [[ "$CONFIRM" != "yes" ]] && { echo "Cancelled."; exit 0; }
 
-# Backup data/uploads/ sebelum di-rm (kalau diminta)
-if [[ $BACKUP_UPLOADS -eq 1 ]] && [[ -d "$APP_DIR/data/uploads" ]]; then
-  step "0/6 — Backup data/uploads/ ke /root/backups"
-  mkdir -p /root/backups
-  UPLOADS_BACKUP="/root/backups/ptopup-uploads-$(date +%Y%m%d-%H%M%S).tar.gz"
-  tar -czf "$UPLOADS_BACKUP" -C "$APP_DIR" data/uploads 2>/dev/null && \
-    ok "Uploads di-backup ke: $UPLOADS_BACKUP" || \
-    warn "Backup gagal (tar error). Lanjut anyway."
+# Backup data/uploads/ + data/wa-session/ sebelum di-rm (kalau diminta)
+if [[ $BACKUP_UPLOADS -eq 1 ]]; then
+  BACKUP_TARGETS=()
+  [[ -d "$APP_DIR/data/uploads" ]] && BACKUP_TARGETS+=("data/uploads")
+  [[ -d "$APP_DIR/data/wa-session" ]] && BACKUP_TARGETS+=("data/wa-session")
+
+  if [[ ${#BACKUP_TARGETS[@]} -gt 0 ]]; then
+    step "0/6 — Backup data/ ke /root/backups [${BACKUP_TARGETS[*]}]"
+    mkdir -p /root/backups
+    UPLOADS_BACKUP="/root/backups/ptopup-uploads-$(date +%Y%m%d-%H%M%S).tar.gz"
+    tar -czf "$UPLOADS_BACKUP" -C "$APP_DIR" "${BACKUP_TARGETS[@]}" 2>/dev/null && \
+      ok "Data di-backup ke: $UPLOADS_BACKUP" || \
+      warn "Backup gagal (tar error). Lanjut anyway."
+  fi
 fi
 
 # ============================================================

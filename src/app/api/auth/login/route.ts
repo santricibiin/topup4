@@ -1,10 +1,17 @@
 import { NextRequest } from "next/server";
+import { OtpPurpose } from "@prisma/client";
 import { apiHandler, ok } from "@/server/api-handler";
 import { LoginSchema } from "@/schemas/auth.schema";
 import { authService } from "@/services/auth.service";
+import { otpService } from "@/services/otp.service";
+import { settingsService } from "@/services/settings.service";
+import { waService } from "@/services/wa.service";
 import { setSessionCookie } from "@/server/auth";
 import { rateLimit, rateLimitReset, getClientIp } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export const POST = apiHandler(async (req: NextRequest) => {
   const ip = getClientIp(req);
@@ -28,13 +35,55 @@ export const POST = apiHandler(async (req: NextRequest) => {
   });
 
   try {
+    // Validasi kredensial dulu (tanpa bikin session)
+    const user = await authService.verifyCredentialsForLogin(input);
+
+    // Cek apakah login OTP aktif & user punya phone & WA siap
+    const cfg = await settingsService.getWaConfig();
+    const waReady = waService.isReady();
+    const needsOtp =
+      cfg.enabled &&
+      cfg.featureOtpLogin &&
+      waReady &&
+      Boolean(user.phone);
+
+    logger.info("auth.login.otp_check", {
+      userId: user.id,
+      hasPhone: Boolean(user.phone),
+      waEnabled: cfg.enabled,
+      featureOtpLogin: cfg.featureOtpLogin,
+      waReady,
+      needsOtp,
+    });
+
+    if (needsOtp && user.phone) {
+      // Kirim OTP, JANGAN bikin session
+      await otpService.requestOtp({
+        phone: user.phone,
+        purpose: OtpPurpose.LOGIN,
+        ip,
+      });
+      const masked =
+        user.phone.length > 4
+          ? "•".repeat(user.phone.length - 4) + user.phone.slice(-4)
+          : user.phone;
+      // Reset login rate limit karena password udah benar — counter OTP terpisah
+      rateLimitReset(`login:user:${input.identifier.toLowerCase()}`);
+      return ok({
+        needsOtp: true,
+        phone: masked,
+        phoneFull: user.phone,
+        ttlSec: cfg.otpTtlSec,
+      });
+    }
+
+    // Tidak butuh OTP → bikin session langsung pakai flow klasik
     const session = await authService.login(input);
     setSessionCookie(session.token, session.expiresAt);
-
-    // Login sukses → reset hit counter akun
     rateLimitReset(`login:user:${input.identifier.toLowerCase()}`);
 
     return ok({
+      needsOtp: false,
       id: session.user.id,
       email: session.user.email,
       username: session.user.username,

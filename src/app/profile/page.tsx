@@ -1,11 +1,13 @@
 import { redirect } from "next/navigation";
-import { User as UserIcon, Lock } from "lucide-react";
+import { User as UserIcon, Lock, Bell } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Navbar } from "@/components/layout/navbar";
 import { getCurrentUser } from "@/server/auth";
+import { settingsService } from "@/services/settings.service";
 import {
   ProfileForm,
   PasswordForm,
+  NotificationForm,
 } from "@/features/profile/components/profile-form";
 
 export const metadata = { title: "Profile" };
@@ -14,6 +16,9 @@ export const dynamic = "force-dynamic";
 export default async function ProfilePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+
+  const waCfg = await settingsService.getWaConfig();
+  const showNotif = waCfg.enabled && waCfg.featureNotifTx;
 
   return (
     <>
@@ -49,6 +54,23 @@ export default async function ProfilePage() {
               />
             </CardContent>
           </Card>
+
+          {/* Section: Notifikasi (kalau WA aktif) */}
+          {showNotif && (
+            <Card>
+              <SectionHeader
+                icon={Bell}
+                title="Notifikasi"
+                description="Atur preferensi notifikasi WhatsApp untuk akun ini."
+              />
+              <CardContent className="p-5 md:p-6">
+                <NotificationForm
+                  initial={{ notifWaTx: user.notifWaTx }}
+                  hasPhone={Boolean(user.phone)}
+                />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Section: Password */}
           <Card>

@@ -334,9 +334,12 @@ mkdir -p "$APP_DIR/data/uploads/avatars"
 mkdir -p "$APP_DIR/data/uploads/logos"
 mkdir -p "$APP_DIR/data/uploads/brands"
 mkdir -p "$APP_DIR/data/uploads/tickets"
+# Folder kredensial Baileys (WhatsApp). Di-gitignore — persistent across deploy.
+mkdir -p "$APP_DIR/data/wa-session"
 chown -R $APP_USER:$APP_USER "$APP_DIR/data"
 chmod -R 750 "$APP_DIR/data"
-ok "Media dirs ready: data/uploads/{avatars,logos,brands,tickets}"
+chmod 700 "$APP_DIR/data/wa-session"  # creds WA — extra restrictive (0700)
+ok "Data dirs ready: data/uploads/{avatars,logos,brands,tickets} + data/wa-session"
 
 # Auto-migrasi legacy uploads (kalau di-deploy di atas instalasi lama yg masih
 # pakai public/uploads/). Idempotent — aman di-run di instalasi baru.
