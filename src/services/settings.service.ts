@@ -25,6 +25,7 @@ export const SETTING_KEYS = {
   SITE_THEME: "site.theme",                    // preset key (mis. "emerald", "violet", "amber") atau "custom:HSL"
   SITE_BACKGROUND: "site.background",          // pola background global (lihat background-presets.ts)
   // Deposit / Payment
+  DEPOSIT_PROVIDER: "deposit.provider",        // "dana" | "neobank" — sumber pembayaran QRIS aktif
   DEPOSIT_QRIS_CODE: "deposit.qrisCode",       // EMVCo string QRIS statis
   DEPOSIT_CALLBACK_SECRET: "deposit.callbackSecret", // secret utk validasi webhook
   DEPOSIT_MIN: "deposit.min",                  // minimal nominal (Rp)
@@ -98,6 +99,8 @@ function envDefault(key: SettingKey): string {
       return "emerald";
     case SETTING_KEYS.SITE_BACKGROUND:
       return "batik";
+    case SETTING_KEYS.DEPOSIT_PROVIDER:
+      return "dana";
     case SETTING_KEYS.DEPOSIT_QRIS_CODE:
       return "";
     case SETTING_KEYS.DEPOSIT_CALLBACK_SECRET:
@@ -292,8 +295,9 @@ class SettingsService {
   }
 
   async getDepositConfig() {
-    const [qrisCode, callbackSecret, min, max, expiryMin, danaOwnerName] =
+    const [provider, qrisCode, callbackSecret, min, max, expiryMin, danaOwnerName] =
       await Promise.all([
+        this.get(SETTING_KEYS.DEPOSIT_PROVIDER),
         this.get(SETTING_KEYS.DEPOSIT_QRIS_CODE),
         this.get(SETTING_KEYS.DEPOSIT_CALLBACK_SECRET),
         this.get(SETTING_KEYS.DEPOSIT_MIN),
@@ -302,6 +306,7 @@ class SettingsService {
         this.get(SETTING_KEYS.DEPOSIT_DANA_OWNER_NAME),
       ]);
     return {
+      provider: provider || "dana",
       qrisCode,
       callbackSecret,
       min: Number(min) || 10_000,

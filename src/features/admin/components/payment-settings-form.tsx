@@ -13,14 +13,17 @@ import {
   Wallet,
   Eye,
   EyeOff,
+  Smartphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatIDR } from "@/lib/utils";
+import { formatIDR, cn } from "@/lib/utils";
+import { DEPOSIT_PROVIDERS, resolveDepositProvider } from "@/lib/deposit-providers";
 
 interface Props {
   initial: {
+    provider: string;
     qrisCode: string;
     callbackSecret: string; // masked
     callbackSecretSet: boolean;
@@ -33,6 +36,7 @@ interface Props {
 
 export function PaymentSettingsForm({ initial }: Props) {
   const router = useRouter();
+  const [provider, setProvider] = useState(initial.provider);
   const [qrisCode, setQrisCode] = useState(initial.qrisCode);
   const [secret, setSecret] = useState(initial.callbackSecret);
   const [showSecret, setShowSecret] = useState(false);
@@ -42,7 +46,10 @@ export function PaymentSettingsForm({ initial }: Props) {
   const [danaOwnerName, setDanaOwnerName] = useState(initial.danaOwnerName);
   const [saving, setSaving] = useState(false);
 
+  const activeProvider = resolveDepositProvider(provider);
+
   const dirty =
+    provider !== initial.provider ||
     qrisCode !== initial.qrisCode ||
     (secret !== initial.callbackSecret && !secret.includes("•")) ||
     Number(min) !== initial.min ||
@@ -51,6 +58,7 @@ export function PaymentSettingsForm({ initial }: Props) {
     danaOwnerName !== initial.danaOwnerName;
 
   function reset() {
+    setProvider(initial.provider);
     setQrisCode(initial.qrisCode);
     setSecret(initial.callbackSecret);
     setMin(String(initial.min));
@@ -68,6 +76,7 @@ export function PaymentSettingsForm({ initial }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          provider,
           qrisCode: qrisCode.trim(),
           callbackSecret: secret.includes("•") ? "" : secret.trim(),
           min: Number(min),
@@ -99,23 +108,74 @@ export function PaymentSettingsForm({ initial }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Provider toggle */}
+      <div className="space-y-2">
+        <Label className="flex items-center gap-1.5">
+          <Smartphone className="h-3.5 w-3.5 text-muted-foreground" />
+          Sumber Pembayaran
+        </Label>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {DEPOSIT_PROVIDERS.map((p) => {
+            const active = provider === p.key;
+            return (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => setProvider(p.key)}
+                className={cn(
+                  "flex items-start gap-3 rounded-lg border p-3 text-left transition-all",
+                  active
+                    ? "border-primary bg-primary/5 shadow-sm"
+                    : "border-border bg-card hover:border-primary/40 hover:bg-muted/50",
+                )}
+              >
+                <div
+                  className={cn(
+                    "mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-md",
+                    active
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  <Smartphone className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold">{p.label}</div>
+                  <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
+                    {p.pkg}
+                  </div>
+                </div>
+                {active && (
+                  <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Pilih aplikasi yang akan dipakai menerima pembayaran. Setting ini
+          juga menentukan package name yang divalidasi di webhook.
+        </p>
+      </div>
+
       {/* QRIS Code */}
       <div className="space-y-2">
         <Label htmlFor="qris-code" className="flex items-center gap-1.5">
           <QrCode className="h-3.5 w-3.5 text-muted-foreground" />
-          QRIS Statis (EMVCo)
+          QRIS Statis (EMVCo) — {activeProvider.label}
         </Label>
         <textarea
           id="qris-code"
           value={qrisCode}
           onChange={(e) => setQrisCode(e.target.value)}
-          placeholder="00020101021126570011ID.DANA.WWW011893..."
+          placeholder="00020101021126570011ID..."
           rows={4}
           className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
         />
         <p className="text-xs text-muted-foreground">
-          Salin kode QR statis dari aplikasi DANA Bisnis. Sistem akan
-          mengkonversi ke QRIS dinamis (per nominal) saat user request deposit.
+          Salin kode QR statis dari aplikasi {activeProvider.appName}. Sistem
+          akan mengkonversi ke QRIS dinamis (per nominal) saat user request
+          deposit.
         </p>
       </div>
 
@@ -236,9 +296,11 @@ export function PaymentSettingsForm({ initial }: Props) {
         </div>
       </div>
 
-      {/* Owner DANA */}
+      {/* Owner */}
       <div className="space-y-2">
-        <Label htmlFor="dana-owner">Nama Pemilik DANA (opsional)</Label>
+        <Label htmlFor="dana-owner">
+          Nama Pemilik {activeProvider.label} (opsional)
+        </Label>
         <Input
           id="dana-owner"
           value={danaOwnerName}

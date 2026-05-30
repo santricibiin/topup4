@@ -21,6 +21,7 @@ import { Prisma, type Deposit, type DepositStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { Errors } from "@/lib/errors";
+import { resolveDepositProvider } from "@/lib/deposit-providers";
 import { settingsService } from "./settings.service";
 
 interface CreateDepositInput {
@@ -118,6 +119,7 @@ class DepositService {
     // Pastikan integer Rupiah
     const amount = Math.floor(input.amount);
 
+    const provider = resolveDepositProvider(cfg.provider);
     const { uniqueCode, totalAmount } = await this.pickUniqueAmount(amount);
     const qrisPayload = await this.generateDynamicQRIS(cfg.qrisCode, totalAmount);
 
@@ -126,13 +128,13 @@ class DepositService {
     const deposit = await prisma.deposit.create({
       data: {
         userId: input.userId,
-        method: "DANA",
+        method: provider.method,
         amount: new Prisma.Decimal(amount),
         uniqueCode,
         totalAmount: new Prisma.Decimal(totalAmount),
         status: "PENDING",
         qrisPayload,
-        description: input.description,
+        description: input.description ?? `Deposit via ${provider.label}`,
         expiresAt,
       },
     });
@@ -212,7 +214,11 @@ class DepositService {
     infotext?: string;
     raw?: string;
   }): Promise<{ matched: boolean; depositId?: string; reason?: string }> {
-    if (payload.pkg && payload.pkg !== "id.dana") {
+    // Resolve provider aktif → tentukan pkg yang valid & label utk deskripsi.
+    const cfg = await settingsService.getDepositConfig();
+    const provider = resolveDepositProvider(cfg.provider);
+
+    if (payload.pkg && payload.pkg !== provider.pkg) {
       return { matched: false, reason: "pkg-mismatch" };
     }
 
@@ -289,7 +295,7 @@ class DepositService {
           amount: new Prisma.Decimal(updated.amount),
           balanceBefore: before,
           balanceAfter: after,
-          description: `Deposit DANA · ${formatRp(Number(updated.amount))}`,
+          description: `Deposit ${provider.label} · ${formatRp(Number(updated.amount))}`,
           referenceType: "DEPOSIT",
           referenceId: updated.id,
         },

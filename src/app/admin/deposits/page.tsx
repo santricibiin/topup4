@@ -152,6 +152,7 @@ export default async function AdminDepositsPage({ searchParams }: PageProps) {
       >
         <PaymentSettingsForm
           initial={{
+            provider: payment.provider,
             qrisCode: payment.qrisCode,
             callbackSecret: payment.callbackSecret
               ? settingsService.mask(payment.callbackSecret)

@@ -3,11 +3,13 @@ import { z } from "zod";
 import { apiHandler, ok } from "@/server/api-handler";
 import { requireAdminApi } from "@/server/admin";
 import { settingsService, SETTING_KEYS } from "@/services/settings.service";
+import { DEPOSIT_PROVIDER_KEYS } from "@/lib/deposit-providers";
 import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
 const PaymentSchema = z.object({
+  provider: z.enum(DEPOSIT_PROVIDER_KEYS).optional().default("dana"),
   qrisCode: z.string().trim().max(2000).optional().default(""),
   callbackSecret: z.string().trim().max(120).optional().default(""),
   min: z
@@ -33,6 +35,7 @@ export const GET = apiHandler(async (req: NextRequest) => {
   await requireAdminApi(req);
   const cfg = await settingsService.getDepositConfig();
   return ok({
+    provider: cfg.provider,
     qrisCode: cfg.qrisCode,
     callbackSecret: cfg.callbackSecret
       ? settingsService.mask(cfg.callbackSecret)
@@ -58,6 +61,7 @@ export const POST = apiHandler(async (req: NextRequest) => {
     key: (typeof SETTING_KEYS)[keyof typeof SETTING_KEYS];
     value: string;
   }> = [
+    { key: SETTING_KEYS.DEPOSIT_PROVIDER, value: data.provider ?? "dana" },
     { key: SETTING_KEYS.DEPOSIT_QRIS_CODE, value: data.qrisCode ?? "" },
     { key: SETTING_KEYS.DEPOSIT_MIN, value: String(data.min) },
     { key: SETTING_KEYS.DEPOSIT_MAX, value: String(data.max) },
