@@ -19,6 +19,7 @@ import {
 import { Navbar } from "@/components/layout/navbar";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/server/auth";
+import { settingsService } from "@/services/settings.service";
 import { formatIDR, formatDateTime } from "@/lib/utils";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Card, CardContent } from "@/components/ui/card";
@@ -115,6 +116,8 @@ export default async function TransactionStatusPage({ params }: PageProps) {
     },
   });
   if (!tx || (tx.userId !== user.id && user.role !== "ADMIN")) notFound();
+
+  const branding = await settingsService.getSiteBranding();
 
   const isAdminView = user.role === "ADMIN" && tx.userId !== user.id;
   const isFinal = FINAL.has(tx.status);
@@ -259,7 +262,7 @@ export default async function TransactionStatusPage({ params }: PageProps) {
                   label="Metode bayar"
                   value={
                     tx.paymentMethod === "BALANCE"
-                      ? "Saldo PTopup"
+                      ? `Saldo ${branding.name}`
                       : tx.paymentChannel
                         ? `${tx.paymentMethod.replace("DUITKU_", "")} · ${tx.paymentChannel}`
                         : tx.paymentMethod
