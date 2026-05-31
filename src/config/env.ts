@@ -42,6 +42,16 @@ const envSchema = z.object({
   // Realtime / Socket.IO — opsional. App ini pakai polling, gak butuh socket.
   SOCKET_PORT: z.coerce.number().int().positive().default(3001),
   NEXT_PUBLIC_SOCKET_URL: z.string().url().optional().default("http://localhost:3001"),
+
+  // Web Push (PWA/TWA) — opsional. Fitur push notification hanya aktif kalau
+  // ketiga VAPID key di bawah terisi. Generate sekali via:
+  //   npx web-push generate-vapid-keys
+  // PUBLIC key di-expose ke client (aman); PRIVATE key wajib rahasia.
+  NEXT_PUBLIC_VAPID_PUBLIC_KEY: z.string().optional().default(""),
+  VAPID_PRIVATE_KEY: z.string().optional().default(""),
+  // Kontak admin (mailto: atau URL https) — dikirim ke push service sbg
+  // identitas pengirim. Default mailto kalau kosong.
+  VAPID_SUBJECT: z.string().optional().default(""),
 });
 
 // Inject sessionSecret manual agar backward compat dengan SESSION_PASSWORD lama.

@@ -28,6 +28,8 @@ const securityHeaders = [
       "img-src 'self' data: https: blob:",
       "font-src 'self' https://fonts.gstatic.com data:",
       "connect-src 'self' https://api.digiflazz.com https://*.duitku.com https://api.iconify.design https://api.simplesvg.com https://api.unisvg.com",
+      "worker-src 'self' blob:",
+      "manifest-src 'self'",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self' https://*.duitku.com",
@@ -65,6 +67,7 @@ const nextConfig = {
       "jimp",
       "link-preview-js",
       "audio-decode",
+      "web-push",
     ],
   },
   // Compress server response (dev/prod). Sudah default true di Next 14, tapi explicit.

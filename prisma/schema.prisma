@@ -174,16 +174,20 @@ model User {
   // Opt-in notifikasi WA. Default true supaya user yg sudah punya nomor
   // langsung dapat update transaksi tanpa setting tambahan.
   notifWaTx     Boolean    @default(true) @map("notif_wa_tx")
+  // Opt-in Web Push (PWA/TWA). Default true; subscription per-device
+  // disimpan terpisah di PushSubscription.
+  notifPush     Boolean    @default(true) @map("notif_push")
   lastLoginAt   DateTime?  @map("last_login_at")
 
   // Relations
-  balance         Balance?
-  mutations       BalanceMutation[]
-  transactions    Transaction[]
-  sessions        Session[]
-  deposits        Deposit[]
-  tickets         Ticket[]          @relation("TicketOwner")
-  assignedTickets Ticket[]          @relation("TicketAssignee")
+  balance           Balance?
+  mutations         BalanceMutation[]
+  transactions      Transaction[]
+  sessions          Session[]
+  deposits          Deposit[]
+  tickets           Ticket[]           @relation("TicketOwner")
+  assignedTickets   Ticket[]           @relation("TicketAssignee")
+  pushSubscriptions PushSubscription[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -589,4 +593,29 @@ model OtpCode {
   @@index([phone, purpose, status])
   @@index([expiresAt])
   @@map("otp_codes")
+}
+
+// ---------------------------------------------------------
+// PUSH SUBSCRIPTION — Web Push (PWA/TWA) per-device.
+// Satu user bisa punya banyak subscription (HP, tablet, browser beda).
+// `endpoint` unik global (URL push service Chrome/FCM/Mozilla).
+// `p256dh` + `auth` adalah kunci enkripsi payload (dari PushSubscription
+// browser). JANGAN log nilainya — dipakai untuk encrypt isi notifikasi.
+// Subscription yang ditolak push service (HTTP 404/410) di-prune otomatis.
+// ---------------------------------------------------------
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  endpoint  String    @unique @db.VarChar(512)
+  p256dh    String   @db.VarChar(255)
+  auth      String   @db.VarChar(255)
+  userAgent String?  @map("user_agent") @db.VarChar(512)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }

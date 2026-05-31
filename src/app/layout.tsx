@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { IconifyBootstrap } from "@/components/providers/iconify-bootstrap";
+import { ServiceWorkerBootstrap } from "@/components/providers/service-worker-bootstrap";
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { getCurrentUser } from "@/server/auth";
 import { settingsService } from "@/services/settings.service";
@@ -56,6 +57,12 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     description: branding.tagline || "Topup PPOB, pulsa, dan game cepat, aman, anti-ribet.",
     metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
+    manifest: "/manifest.webmanifest",
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "black-translucent",
+      title: branding.name,
+    },
     icons,
   };
 }
@@ -84,6 +91,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       >
         <ThemeProvider>
           <IconifyBootstrap />
+          <ServiceWorkerBootstrap />
           {children}
           {user && <BottomNav isAdmin={user.role === "ADMIN"} />}
           <Toaster

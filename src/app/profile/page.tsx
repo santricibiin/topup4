@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { User as UserIcon, Lock, Bell } from "lucide-react";
+import { User as UserIcon, Lock, Bell, Smartphone } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Navbar } from "@/components/layout/navbar";
 import { getCurrentUser } from "@/server/auth";
@@ -9,6 +9,7 @@ import {
   PasswordForm,
   NotificationForm,
 } from "@/features/profile/components/profile-form";
+import { PushNotificationForm } from "@/features/profile/components/push-notification-form";
 
 export const metadata = { title: "Profile" };
 export const dynamic = "force-dynamic";
@@ -17,8 +18,12 @@ export default async function ProfilePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const waCfg = await settingsService.getWaConfig();
+  const [waCfg, pushCfg] = await Promise.all([
+    settingsService.getWaConfig(),
+    settingsService.getPushConfig(),
+  ]);
   const showNotif = waCfg.enabled && waCfg.featureNotifTx;
+  const showPush = pushCfg.enabled && pushCfg.configured;
 
   return (
     <>
@@ -67,6 +72,23 @@ export default async function ProfilePage() {
                 <NotificationForm
                   initial={{ notifWaTx: user.notifWaTx }}
                   hasPhone={Boolean(user.phone)}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Section: Push notification (kalau VAPID dikonfigurasi & aktif) */}
+          {showPush && (
+            <Card>
+              <SectionHeader
+                icon={Smartphone}
+                title="Notifikasi Aplikasi"
+                description="Notifikasi push langsung ke perangkat/aplikasi, tanpa perlu buka web."
+              />
+              <CardContent className="p-5 md:p-6">
+                <PushNotificationForm
+                  initial={{ notifPush: user.notifPush }}
+                  vapidPublicKey={pushCfg.publicKey}
                 />
               </CardContent>
             </Card>

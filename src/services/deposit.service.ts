@@ -23,6 +23,7 @@ import { logger } from "@/lib/logger";
 import { Errors } from "@/lib/errors";
 import { resolveDepositProvider } from "@/lib/deposit-providers";
 import { settingsService } from "./settings.service";
+import { pushNotifyService } from "./push-notify.service";
 
 interface CreateDepositInput {
   userId: string;
@@ -309,6 +310,8 @@ class DepositService {
         depositId: result.deposit.id,
         amount,
       });
+      // notif push fire-and-forget (tidak boleh ganggu flow webhook)
+      void pushNotifyService.notifyDepositSuccess(result.deposit.id);
       return { matched: true, depositId: result.deposit.id };
     }
     logger.warn("deposit.callback.no_match", { amount });

@@ -61,6 +61,8 @@ export const SETTING_KEYS = {
   // System-set (read-only via UI; di-update otomatis service)
   WA_LINKED_JID: "wa.linkedJid",               // JID akun aktif
   WA_LINKED_AT: "wa.linkedAt",                 // ISO timestamp connect
+  // Web Push (PWA/TWA)
+  PUSH_ENABLED: "push.enabled",                // "true" | "false" — master switch push notif
 } as const;
 
 export type SettingKey = (typeof SETTING_KEYS)[keyof typeof SETTING_KEYS];
@@ -163,6 +165,8 @@ function envDefault(key: SettingKey): string {
       return "";
     case SETTING_KEYS.WA_LINKED_AT:
       return "";
+    case SETTING_KEYS.PUSH_ENABLED:
+      return "true";
     default:
       return "";
   }
@@ -406,6 +410,22 @@ class SettingsService {
       tplTxFailed,
       linkedJid,
       linkedAt,
+    };
+  }
+
+  /**
+   * Konfigurasi Web Push. `configured` true kalau VAPID key lengkap di env —
+   * tanpa itu push tidak mungkin jalan, apa pun master switch-nya.
+   */
+  async getPushConfig() {
+    const enabled = await this.get(SETTING_KEYS.PUSH_ENABLED);
+    const configured = Boolean(
+      env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY,
+    );
+    return {
+      enabled: enabled === "true",
+      configured,
+      publicKey: env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
     };
   }
 }

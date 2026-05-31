@@ -19,6 +19,7 @@ Dokumen ini berisi langkah-langkah operasional untuk install, update, backup, da
 13. Deploy untuk Repo Private
 14. Kumpulkan Info untuk Bantuan
 15. WhatsApp Integration (OTP & Notifikasi)
+16. Push Notification (PWA/TWA Web Push)
 
 ---
 
@@ -786,6 +787,117 @@ Atau lewat Admin UI ➜ menu **Backup** ➜ tombol **Backup Uploads**.
   file `.env`. Jangan share publik.
 - Akun WA yang dipakai untuk OTP sebaiknya **akun terpisah** (bukan akun
   pribadi admin) — bisa pakai nomor virtual / SIM khusus.
+
+---
+
+## 16. Push Notification (PWA/TWA Web Push)
+
+PTopup mendukung **Web Push** — notifikasi langsung ke perangkat/aplikasi tanpa
+perlu buka web. Berguna terutama setelah web di-convert jadi APK (PWABuilder /
+Bubblewrap / TWA). Event yang memicu push:
+
+- Pembayaran transaksi diterima (PAID)
+- Transaksi berhasil (SUCCESS) — termasuk SN
+- Transaksi gagal / refund (FAILED)
+- Saldo deposit berhasil masuk (SUCCESS)
+
+Push berjalan paralel dengan notifikasi WhatsApp. Keduanya independen — user
+bisa pakai salah satu, keduanya, atau tidak sama sekali.
+
+### 16.1 Generate VAPID Key
+
+Web Push butuh sepasang kunci VAPID. Generate sekali (tidak perlu diulang
+kecuali mau rotate):
+
+```bash
+cd /opt/ptopup
+npx web-push generate-vapid-keys
+```
+
+Output:
+
+```
+Public Key:  BNc...   (panjang, base64url)
+Private Key: x1y...
+```
+
+### 16.2 Set Environment Variable
+
+Edit `.env` (`sudo nano /opt/ptopup/.env`), tambahkan:
+
+```
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=<Public Key dari langkah 16.1>
+VAPID_PRIVATE_KEY=<Private Key dari langkah 16.1>
+VAPID_SUBJECT=mailto:admin@domainmu.com
+```
+
+Catatan:
+
+- `NEXT_PUBLIC_VAPID_PUBLIC_KEY` **harus** prefix `NEXT_PUBLIC_` karena dipakai
+  di browser (client). Kunci publik aman diekspos.
+- `VAPID_PRIVATE_KEY` **rahasia** — jangan commit / share.
+- `VAPID_SUBJECT` wajib format `mailto:email` atau `https://domain`.
+- Karena `NEXT_PUBLIC_*` di-inline saat build, **wajib rebuild** setelah set:
+  ```bash
+  cd /opt/ptopup && npm run build && pm2 restart ptopup
+  ```
+  (alias: `ptupdate` kalau sudah di-setup).
+
+### 16.3 Aktifkan & Pakai
+
+1. Setelah VAPID terisi & build ulang, buka halaman **Profile** → muncul card
+   **Notifikasi Aplikasi**.
+2. Klik **Aktifkan Notifikasi** → browser minta izin → izinkan.
+3. Klik **Test Notifikasi** untuk verifikasi notifikasi sampai ke perangkat.
+4. Toggle per-akun (`notifPush`, default ON) mengatur apakah user terima push.
+
+Master switch `push.enabled` (default ON) bisa dipakai untuk mematikan push
+global tanpa hapus VAPID key — diatur lewat tabel settings.
+
+### 16.4 Build APK (Bubblewrap / TWA)
+
+Saat generate APK dengan Bubblewrap, pastikan:
+
+- Manifest sudah tersedia di `https://domainmu.com/manifest.webmanifest`
+  (otomatis disajikan dari `public/manifest.webmanifest`).
+- Service worker `https://domainmu.com/sw.js` reachable.
+- Di `twa-manifest.json` Bubblewrap, set:
+  ```json
+  "enableNotifications": true
+  ```
+- Icon PNG sudah ada di `public/icons/` (di-generate via `npm run icons:pwa`).
+  Regenerate kalau ganti logo:
+  ```bash
+  npm run icons:pwa
+  ```
+
+### 16.5 Troubleshooting
+
+**Card "Notifikasi Aplikasi" tidak muncul di Profile:**
+- VAPID key belum diisi atau build belum di-rebuild. Cek `.env` lalu
+  `npm run build && pm2 restart ptopup`.
+
+**Tombol Aktifkan error "Izin notifikasi ditolak":**
+- User menolak permission. Aktifkan manual lewat setelan situs/aplikasi di
+  browser/HP, lalu coba lagi.
+
+**Test Notifikasi sukses tapi notif event transaksi tidak datang:**
+- Cek toggle `notifPush` user ON.
+- Cek master switch `push.enabled` ON.
+- Cek subscription belum ke-prune (subscription mati otomatis dihapus saat
+  endpoint balas 404/410).
+
+**Notifikasi tidak muncul di iOS:**
+- iOS hanya support Web Push kalau web di-install sebagai PWA dari Safari (iOS
+  16.4+). Untuk target APK Android (TWA), ini tidak relevan.
+
+### 16.6 Keamanan
+
+- `VAPID_PRIVATE_KEY` rahasia — perlakukan seperti kredensial `.env` lain.
+- Kunci enkripsi subscription (`p256dh`, `auth`) disimpan di tabel
+  `push_subscriptions` dan **tidak pernah di-log**.
+- Endpoint subscribe/unsubscribe wajib login (terikat ke user) — tidak bisa
+  daftar subscription untuk user lain.
 
 ---
 

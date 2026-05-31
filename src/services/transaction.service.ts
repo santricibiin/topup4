@@ -25,6 +25,7 @@ import { digiflazzService } from "./digiflazz.service";
 import { duitkuService } from "./duitku.service";
 import { gatewayLogService } from "./gateway-log.service";
 import { waNotifyService } from "./wa-notify.service";
+import { pushNotifyService } from "./push-notify.service";
 
 export interface CheckoutInput {
   userId: string;
@@ -205,6 +206,10 @@ export const transactionService = {
       transactionId: tx.id,
       status: TransactionStatus.PAID,
     });
+    void pushNotifyService.notifyTransactionStatus({
+      transactionId: tx.id,
+      status: TransactionStatus.PAID,
+    });
 
     return {
       orderId,
@@ -243,6 +248,10 @@ export const transactionService = {
 
     // notif WA fire-and-forget (tidak boleh ganggu flow)
     void waNotifyService.notifyTransactionStatus({
+      transactionId: updated.id,
+      status: TransactionStatus.PAID,
+    });
+    void pushNotifyService.notifyTransactionStatus({
       transactionId: updated.id,
       status: TransactionStatus.PAID,
     });
@@ -337,6 +346,10 @@ export const transactionService = {
         transactionId: result.tx.id,
         status: TransactionStatus.FAILED,
       });
+      void pushNotifyService.notifyTransactionStatus({
+        transactionId: result.tx.id,
+        status: TransactionStatus.FAILED,
+      });
     }
 
     return result.tx;
@@ -366,6 +379,10 @@ export const transactionService = {
         },
       });
       void waNotifyService.notifyTransactionStatus({
+        transactionId: updated.id,
+        status: TransactionStatus.SUCCESS,
+      });
+      void pushNotifyService.notifyTransactionStatus({
         transactionId: updated.id,
         status: TransactionStatus.SUCCESS,
       });
