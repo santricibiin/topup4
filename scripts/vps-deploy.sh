@@ -312,6 +312,47 @@ log "Pushing Prisma schema to DB..."
 sudo -u $APP_USER bash -lc "cd $APP_DIR && npx prisma generate >/dev/null 2>&1 && npx prisma db push --skip-generate" 2>&1 | tail -3
 ok "Schema synced"
 
+# ---- VAPID keys untuk Web Push (PWA/TWA notification) ----
+# PENTING: NEXT_PUBLIC_VAPID_PUBLIC_KEY di-inline ke bundle browser saat BUILD,
+# jadi WAJIB sudah ada di .env SEBELUM `npm run build` di bawah.
+# Idempotent: hanya generate kalau belum ada — biar subscription device lama
+# tetap valid saat re-deploy (kalau key di-rotate, semua device wajib subscribe ulang).
+if grep -qE '^VAPID_PRIVATE_KEY=".+"' "$ENV_FILE"; then
+  ok "VAPID keys sudah ada — skip generate (subscription lama tetap valid)"
+else
+  log "Generating VAPID keys untuk Web Push..."
+  # Tulis generator di $APP_DIR supaya `require('web-push')` ketemu node_modules.
+  VAPID_GEN_FILE="$APP_DIR/.gen-vapid.js"
+  cat > "$VAPID_GEN_FILE" <<'JS'
+const webpush = require('web-push');
+const keys = webpush.generateVAPIDKeys();
+process.stdout.write(keys.publicKey + '\n' + keys.privateKey + '\n');
+JS
+  chown $APP_USER:$APP_USER "$VAPID_GEN_FILE"
+  VAPID_OUT=$(sudo -u $APP_USER bash -lc "cd $APP_DIR && node .gen-vapid.js" 2>/dev/null) || true
+  rm -f "$VAPID_GEN_FILE"
+
+  VAPID_PUB=$(printf '%s\n' "$VAPID_OUT" | sed -n '1p')
+  VAPID_PRIV=$(printf '%s\n' "$VAPID_OUT" | sed -n '2p')
+
+  if [[ -n "$VAPID_PUB" && -n "$VAPID_PRIV" ]]; then
+    # Bersihkan baris VAPID lama yg kosong/partial biar gak dobel.
+    sed -i '/^NEXT_PUBLIC_VAPID_PUBLIC_KEY=/d; /^VAPID_PRIVATE_KEY=/d; /^VAPID_SUBJECT=/d' "$ENV_FILE"
+    cat >> "$ENV_FILE" <<EOF
+
+# Web Push (auto-generated $(date +%Y-%m-%d)). JANGAN share VAPID_PRIVATE_KEY.
+NEXT_PUBLIC_VAPID_PUBLIC_KEY="$VAPID_PUB"
+VAPID_PRIVATE_KEY="$VAPID_PRIV"
+VAPID_SUBJECT="mailto:$EMAIL"
+EOF
+    chown $APP_USER:$APP_USER "$ENV_FILE"
+    ok "VAPID keys generated & disimpan ke .env (push notif aktif)"
+  else
+    warn "Gagal generate VAPID (web-push belum terinstall?). Push notif nonaktif."
+    warn "  Generate manual: cd $APP_DIR && npx web-push generate-vapid-keys"
+  fi
+fi
+
 # FIX: build dengan memory limit untuk VPS RAM kecil
 step "7/9 — Build Next.js production"
 log "Building (5-10 menit, sabar)..."

@@ -804,10 +804,18 @@ Bubblewrap / TWA). Event yang memicu push:
 Push berjalan paralel dengan notifikasi WhatsApp. Keduanya independen — user
 bisa pakai salah satu, keduanya, atau tidak sama sekali.
 
-### 16.1 Generate VAPID Key
+### 16.1 VAPID Key (Auto-Generate)
 
-Web Push butuh sepasang kunci VAPID. Generate sekali (tidak perlu diulang
-kecuali mau rotate):
+Web Push butuh sepasang kunci VAPID. **Mulai sekarang ini otomatis** — baik
+`vps-deploy.sh` (deploy pertama) maupun `vps-update.sh` (update) akan generate
+VAPID key dan menyimpannya ke `.env` kalau belum ada. Proses ini **idempotent**:
+kalau key sudah ada, di-skip supaya subscription perangkat lama tetap valid.
+
+Jadi untuk instalasi baru atau update dari versi lama, **tidak perlu langkah
+manual** — push notification langsung aktif setelah deploy/update selesai.
+
+Generate manual hanya perlu kalau mau **rotate** key (semua perangkat wajib
+subscribe ulang setelah rotate):
 
 ```bash
 cd /opt/ptopup
@@ -821,9 +829,10 @@ Public Key:  BNc...   (panjang, base64url)
 Private Key: x1y...
 ```
 
-### 16.2 Set Environment Variable
+### 16.2 Set Environment Variable (Manual / Rotate)
 
-Edit `.env` (`sudo nano /opt/ptopup/.env`), tambahkan:
+Normalnya tidak perlu — script sudah mengisi otomatis. Lakukan ini hanya kalau
+mau set/rotate manual. Edit `.env` (`sudo nano /opt/ptopup/.env`):
 
 ```
 NEXT_PUBLIC_VAPID_PUBLIC_KEY=<Public Key dari langkah 16.1>
@@ -836,8 +845,10 @@ Catatan:
 - `NEXT_PUBLIC_VAPID_PUBLIC_KEY` **harus** prefix `NEXT_PUBLIC_` karena dipakai
   di browser (client). Kunci publik aman diekspos.
 - `VAPID_PRIVATE_KEY` **rahasia** — jangan commit / share.
-- `VAPID_SUBJECT` wajib format `mailto:email` atau `https://domain`.
-- Karena `NEXT_PUBLIC_*` di-inline saat build, **wajib rebuild** setelah set:
+- `VAPID_SUBJECT` wajib format `mailto:email` atau `https://domain`. Saat
+  auto-generate, script mengisi ini dari email/domain deploy.
+- Karena `NEXT_PUBLIC_*` di-inline saat build, **wajib rebuild** setelah set
+  manual:
   ```bash
   cd /opt/ptopup && npm run build && pm2 restart ptopup
   ```

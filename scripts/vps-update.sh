@@ -53,6 +53,50 @@ step "3/5 — Sync database schema"
 sudo -u $APP_USER bash -c "cd $APP_DIR && npx prisma db push" 2>&1 | tail -3
 ok "DB schema synced"
 
+# ---- VAPID keys untuk Web Push ----
+# Instalasi lama (sebelum fitur push) belum punya VAPID. Generate sekarang biar
+# push notif langsung aktif setelah update. Idempotent: skip kalau sudah ada.
+# WAJIB sebelum build karena NEXT_PUBLIC_VAPID_PUBLIC_KEY di-inline ke bundle browser.
+ENV_FILE="$APP_DIR/.env"
+if [[ -f "$ENV_FILE" ]] && grep -qE '^VAPID_PRIVATE_KEY=".+"' "$ENV_FILE"; then
+  ok "VAPID keys sudah ada — skip generate"
+elif [[ -f "$ENV_FILE" ]]; then
+  log "Generating VAPID keys untuk Web Push (instalasi belum punya)..."
+  VAPID_GEN_FILE="$APP_DIR/.gen-vapid.js"
+  cat > "$VAPID_GEN_FILE" <<'JS'
+const webpush = require('web-push');
+const keys = webpush.generateVAPIDKeys();
+process.stdout.write(keys.publicKey + '\n' + keys.privateKey + '\n');
+JS
+  chown $APP_USER:$APP_USER "$VAPID_GEN_FILE"
+  VAPID_OUT=$(sudo -u $APP_USER bash -c "cd $APP_DIR && node .gen-vapid.js" 2>/dev/null) || true
+  rm -f "$VAPID_GEN_FILE"
+
+  VAPID_PUB=$(printf '%s\n' "$VAPID_OUT" | sed -n '1p')
+  VAPID_PRIV=$(printf '%s\n' "$VAPID_OUT" | sed -n '2p')
+
+  if [[ -n "$VAPID_PUB" && -n "$VAPID_PRIV" ]]; then
+    # Ambil domain dari NEXT_PUBLIC_APP_URL untuk subject (fallback localhost).
+    APP_URL=$(grep -E '^NEXT_PUBLIC_APP_URL=' "$ENV_FILE" | head -1 | sed -E 's/^NEXT_PUBLIC_APP_URL="?([^"]*)"?/\1/')
+    DOMAIN_HOST=$(printf '%s' "$APP_URL" | sed -E 's#https?://##; s#/.*$##')
+    [[ -z "$DOMAIN_HOST" ]] && DOMAIN_HOST="localhost"
+
+    sed -i '/^NEXT_PUBLIC_VAPID_PUBLIC_KEY=/d; /^VAPID_PRIVATE_KEY=/d; /^VAPID_SUBJECT=/d' "$ENV_FILE"
+    cat >> "$ENV_FILE" <<EOF
+
+# Web Push (auto-generated $(date +%Y-%m-%d)). JANGAN share VAPID_PRIVATE_KEY.
+NEXT_PUBLIC_VAPID_PUBLIC_KEY="$VAPID_PUB"
+VAPID_PRIVATE_KEY="$VAPID_PRIV"
+VAPID_SUBJECT="mailto:admin@$DOMAIN_HOST"
+EOF
+    chown $APP_USER:$APP_USER "$ENV_FILE"
+    ok "VAPID keys generated & disimpan ke .env (push notif aktif)"
+  else
+    warn "Gagal generate VAPID. Push notif nonaktif sampai diisi manual."
+    warn "  Manual: cd $APP_DIR && npx web-push generate-vapid-keys"
+  fi
+fi
+
 # Pastikan folder media tetap ada (data/uploads ada di .gitignore jadi gak ke-reset
 # oleh git reset, tapi kalau install lama tidak punya folder ini, buat sekarang).
 mkdir -p "$APP_DIR/data/uploads/avatars" "$APP_DIR/data/uploads/logos" \
